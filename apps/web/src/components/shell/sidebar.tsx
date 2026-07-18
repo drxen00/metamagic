@@ -9,7 +9,6 @@ import {
   LayoutDashboard,
   Library,
   Settings,
-  Sparkles,
   SquareStack,
   Wand2,
 } from "lucide-react";
@@ -38,9 +37,8 @@ export function Sidebar() {
   return (
     <aside className="fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
       <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-border px-5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary/15">
-          <Sparkles className="h-4.5 w-4.5 text-primary" />
-        </div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src="/logo.svg" alt="" className="h-9 w-auto" />
         <span className="gradient-text text-lg font-bold tracking-tight">MetaMagic</span>
       </div>
 
