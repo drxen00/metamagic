@@ -100,7 +100,7 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
             <div className="absolute inset-0 bg-gradient-to-t from-card via-card/60 to-transparent" />
             <button
               onClick={() => setPickerKind("art")}
-              className="absolute right-12 top-4 inline-flex items-center gap-1.5 rounded-md bg-background/60 px-2.5 py-1.5 text-xs text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:text-foreground group-hover/art:opacity-100"
+              className="absolute right-12 top-4 inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-background/70 px-2.5 py-1.5 text-xs text-muted-foreground backdrop-blur transition-colors hover:border-primary/60 hover:text-foreground"
             >
               <ImageIcon className="h-3.5 w-3.5" /> Change background
             </button>
@@ -108,27 +108,37 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
 
           <div className="relative -mt-20 space-y-5 p-6">
             <div className="flex gap-4">
-              <button
-                onClick={() => setPickerKind("poster")}
-                className="group/poster relative h-44 w-[7.3rem] shrink-0 overflow-hidden rounded-lg border border-border shadow-lg"
-                title="Change poster"
-              >
-                {item.thumb ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={imageUrl(item.thumb, 200, 300)}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-full items-center justify-center bg-secondary/60">
-                    <ImageIcon className="h-6 w-6 text-muted-foreground" />
+              <div className="relative shrink-0">
+                <button
+                  onClick={() => setPickerKind("poster")}
+                  className="group/poster relative block h-44 w-[7.3rem] overflow-hidden rounded-lg border border-border shadow-lg"
+                  title="Change poster"
+                >
+                  {item.thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={imageUrl(item.thumb, 200, 300)}
+                      alt=""
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <span className="flex h-full items-center justify-center bg-secondary/60">
+                      <ImageIcon className="h-6 w-6 text-muted-foreground" />
+                    </span>
+                  )}
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs font-medium text-white opacity-0 transition-opacity group-hover/poster:opacity-100">
+                    Change poster
                   </span>
-                )}
-                <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-xs font-medium text-white opacity-0 transition-opacity group-hover/poster:opacity-100">
-                  Change poster
-                </span>
-              </button>
+                </button>
+                <button
+                  onClick={() => setPickerKind("poster")}
+                  aria-label="Change poster"
+                  title="Change poster"
+                  className="absolute -bottom-2 -right-2 rounded-full border border-border bg-secondary p-2 text-muted-foreground shadow-md transition-colors hover:border-primary hover:text-primary"
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </button>
+              </div>
 
               <div className="min-w-0 flex-1 self-end">
                 {editing ? (

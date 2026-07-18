@@ -48,7 +48,7 @@ interface TmdbImages {
 
 export async function tmdbArtwork(
   tmdbId: string,
-  mediaType: "movie" | "tv",
+  mediaType: "movie" | "tv" | "collection",
   kind: "poster" | "art",
 ): Promise<ArtworkOption[]> {
   const data = await tmdbFetch<TmdbImages>(
@@ -63,4 +63,16 @@ export async function tmdbArtwork(
       previewUrl: `${IMG_PREVIEW}${img.file_path}`,
       provider: img.iso_639_1 ? `tmdb · ${img.iso_639_1}` : "tmdb · textless",
     }));
+}
+
+interface TmdbCollectionSearch {
+  results?: { id: number; name: string }[];
+}
+
+/** Find the TMDb collection id best matching a (cleaned) collection name. */
+export async function searchTmdbCollection(query: string): Promise<number | undefined> {
+  const data = await tmdbFetch<TmdbCollectionSearch>(
+    `/search/collection?query=${encodeURIComponent(query)}`,
+  );
+  return data.results?.[0]?.id;
 }

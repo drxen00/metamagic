@@ -198,12 +198,16 @@ export class PlexClient {
   async collections(sectionId?: string): Promise<PlexCollection[]> {
     if (sectionId) {
       const data = await this.request(`/library/sections/${sectionId}/collections`);
-      return (data.MediaContainer.Metadata ?? []).map(toCollection);
+      return (data.MediaContainer.Metadata ?? []).map((m) => toCollection(m, sectionId));
     }
     const all: PlexCollection[] = [];
     for (const section of await this.sections()) {
       const data = await this.request(`/library/sections/${section.id}/collections`);
-      all.push(...(data.MediaContainer.Metadata ?? []).map(toCollection));
+      all.push(
+        ...(data.MediaContainer.Metadata ?? []).map((m) =>
+          toCollection(m, section.id, section.title),
+        ),
+      );
     }
     return all;
   }
@@ -361,13 +365,15 @@ export class PlexClient {
 }
 
 function toMediaItem(m: PlexMetadata): MediaItem {
-  const tmdbGuid = m.Guid?.find((g) => g.id.startsWith("tmdb://"));
+  const guid = (prefix: string) =>
+    m.Guid?.find((g) => g.id.startsWith(prefix))?.id.slice(prefix.length);
   return {
     ratingKey: m.ratingKey,
     title: m.title,
     titleSort: m.titleSort,
     librarySectionId: m.librarySectionID !== undefined ? String(m.librarySectionID) : undefined,
-    tmdbId: tmdbGuid?.id.replace("tmdb://", ""),
+    tmdbId: guid("tmdb://"),
+    tvdbId: guid("tvdb://"),
     type: m.type,
     year: m.year,
     thumb: m.thumb,
@@ -389,14 +395,19 @@ function toMediaItem(m: PlexMetadata): MediaItem {
   };
 }
 
-function toCollection(m: PlexMetadata): PlexCollection {
+function toCollection(
+  m: PlexMetadata,
+  fallbackSectionId?: string,
+  fallbackSectionTitle?: string,
+): PlexCollection {
   return {
     ratingKey: m.ratingKey,
     title: m.title,
     summary: m.summary,
     thumb: m.thumb,
     childCount: Number(m.childCount ?? 0),
-    sectionId: m.librarySectionID !== undefined ? String(m.librarySectionID) : undefined,
-    sectionTitle: m.librarySectionTitle,
+    sectionId:
+      m.librarySectionID !== undefined ? String(m.librarySectionID) : fallbackSectionId,
+    sectionTitle: m.librarySectionTitle ?? fallbackSectionTitle,
   };
 }

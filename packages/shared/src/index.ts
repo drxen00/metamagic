@@ -55,6 +55,7 @@ export interface MediaItem {
   titleSort?: string;
   librarySectionId?: string;
   tmdbId?: string;
+  tvdbId?: string;
 }
 
 export interface PagedResult<T> {
@@ -194,7 +195,8 @@ export const mediuxImportSchema = z.object({
 export type MediuxImportInput = z.infer<typeof mediuxImportSchema>;
 
 export interface MediuxMatch {
-  tmdbId: string;
+  /** TMDb id for movies, TVDb id for shows (MediUX keys shows by TVDb) */
+  id: string;
   title?: string;
   ratingKey?: string;
   thumb?: string;
@@ -203,6 +205,15 @@ export interface MediuxMatch {
   /** Only present in apply results */
   applied?: boolean;
   error?: string;
+}
+
+// ---------- External artwork links ----------
+
+export interface ArtworkLinks {
+  /** ThePosterDB search for the (cleaned) title */
+  tpdbUrl: string;
+  /** Direct MediUX page for this exact item, when resolvable */
+  mediuxUrl?: string;
 }
 
 // ---------- API error envelope ----------

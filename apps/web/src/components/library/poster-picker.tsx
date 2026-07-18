@@ -3,7 +3,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, ExternalLink, ImageIcon, Link2, Upload } from "lucide-react";
-import type { ArtworkKind, ArtworkOption, IntegrationsStatus } from "@metamagic/shared";
+import type { ArtworkKind, ArtworkLinks, ArtworkOption, IntegrationsStatus } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,12 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
   const { data: integrations } = useQuery({
     queryKey: ["integrations"],
     queryFn: () => api<IntegrationsStatus>("/api/settings/integrations"),
+    enabled: open,
+  });
+
+  const { data: links } = useQuery({
+    queryKey: ["artwork-links", ratingKey],
+    queryFn: () => api<ArtworkLinks>(`/api/items/${ratingKey}/links`),
     enabled: open,
   });
 
@@ -85,7 +91,8 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
   });
 
   const label = kind === "poster" ? "poster" : "background";
-  const tpdbSearch = `https://theposterdb.com/search?term=${encodeURIComponent(itemTitle)}`;
+  const tpdbSearch =
+    links?.tpdbUrl ?? `https://theposterdb.com/search?term=${encodeURIComponent(itemTitle)}`;
 
   return (
     <Dialog
@@ -116,14 +123,26 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
               {t.label}
             </button>
           ))}
-          <a
-            href={tpdbSearch}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
-          >
-            Search ThePosterDB <ExternalLink className="h-3.5 w-3.5" />
-          </a>
+          <span className="ml-auto flex items-center gap-3">
+            {links?.mediuxUrl && (
+              <a
+                href={links.mediuxUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
+              >
+                MediUX <ExternalLink className="h-3.5 w-3.5" />
+              </a>
+            )}
+            <a
+              href={tpdbSearch}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1.5 text-sm text-primary underline-offset-2 hover:underline"
+            >
+              ThePosterDB <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </span>
         </div>
 
         {tab !== "url" ? (
@@ -204,8 +223,9 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
         ) : (
           <div className="space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Paste a direct image link — works with MediUX asset links, ThePosterDB download
-              links, or any image URL.
+              Paste an image link — ThePosterDB poster pages (e.g.{" "}
+              <code className="text-xs">theposterdb.com/poster/12345</code>) are converted to the
+              image automatically; MediUX asset links and any direct image URL work too.
             </p>
             <div className="flex gap-2">
               <Input

@@ -6,17 +6,23 @@ import {
   integrationsSchema,
   mediuxImportSchema,
 } from "@metamagic/shared";
-import type { ArtworkOption, IntegrationsStatus } from "@metamagic/shared";
+import type { ArtworkLinks, ArtworkOption, IntegrationsStatus } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
 import { EDIT_TYPE_IDS, PlexError } from "./plex.js";
 import { getAppSetting, setAppSetting } from "./db.js";
-import { tmdbArtwork, validateTmdbKey } from "./tmdb.js";
+import { searchTmdbCollection, tmdbArtwork, validateTmdbKey } from "./tmdb.js";
 import { applyMediux, previewMediux } from "./mediux.js";
+import { fetchRemoteImage } from "./remote-image.js";
 
 function editTypeId(itemType: string): number {
   const id = EDIT_TYPE_IDS[itemType];
   if (!id) throw new PlexError(`Editing is not supported for type "${itemType}"`, 400);
   return id;
+}
+
+/** "Fast & Furious Collection" → "Fast & Furious" for external searches. */
+function cleanCollectionTitle(title: string): string {
+  return title.replace(/\s+collection\s*$/i, "").trim() || title;
 }
 
 export function registerEditingRoutes(app: FastifyInstance): void {
@@ -79,24 +85,63 @@ export function registerEditingRoutes(app: FastifyInstance): void {
 
       if (source === "plex") {
         const options = await client.listArtwork(req.params.ratingKey, kind);
-        return options.map((o) => ({
-          applyUrl: o.ratingKey ?? o.key,
-          previewUrl: `/api/image?path=${encodeURIComponent(o.thumb ?? o.key)}&w=300&h=450`,
-          provider: o.provider ?? "plex",
-          selected: o.selected,
-        }));
+        return options.map((o) => {
+          const preview = o.thumb ?? o.key;
+          return {
+            applyUrl: o.ratingKey ?? o.key,
+            // Agent artwork often carries remote (e.g. image.tmdb.org) URLs the
+            // browser can load directly; only Plex-relative paths need the proxy.
+            previewUrl: /^https?:\/\//i.test(preview)
+              ? preview
+              : `/api/image?path=${encodeURIComponent(preview)}&w=300&h=450`,
+            provider: o.provider ?? "plex",
+            selected: o.selected,
+          };
+        });
       }
 
       if (source === "tmdb") {
         const item = await client.item(req.params.ratingKey);
+        if (item.type === "collection") {
+          const collectionId = await searchTmdbCollection(cleanCollectionTitle(item.title));
+          if (!collectionId) {
+            throw new PlexError(
+              `TMDb has no collection matching “${cleanCollectionTitle(item.title)}”.`,
+              404,
+            );
+          }
+          return tmdbArtwork(String(collectionId), "collection", kind);
+        }
         if (!item.tmdbId) {
           throw new PlexError("This item has no TMDb id in Plex (is it matched to an agent?).", 404);
         }
-        const mediaType = item.type === "show" ? "tv" : "movie";
-        return tmdbArtwork(item.tmdbId, mediaType, kind);
+        return tmdbArtwork(item.tmdbId, item.type === "show" ? "tv" : "movie", kind);
       }
 
       throw new PlexError(`Unknown artwork source "${source}"`, 400);
+    },
+  );
+
+  // External artwork pages for this item (link-outs in the poster picker)
+  app.get<{ Params: { ratingKey: string } }>(
+    "/api/items/:ratingKey/links",
+    async (req): Promise<ArtworkLinks> => {
+      const client = requirePlex();
+      const item = await client.item(req.params.ratingKey);
+      const cleaned =
+        item.type === "collection" ? cleanCollectionTitle(item.title) : item.title;
+      const links: ArtworkLinks = {
+        tpdbUrl: `https://theposterdb.com/search?term=${encodeURIComponent(cleaned)}`,
+      };
+      if (item.type === "collection") {
+        if (getAppSetting("tmdb_api_key")) {
+          const collectionId = await searchTmdbCollection(cleaned).catch(() => undefined);
+          if (collectionId) links.mediuxUrl = `https://mediux.pro/collections/${collectionId}`;
+        }
+      } else if (item.tmdbId) {
+        links.mediuxUrl = `https://mediux.pro/${item.type === "show" ? "shows" : "movies"}/${item.tmdbId}`;
+      }
+      return links;
     },
   );
 
@@ -104,7 +149,14 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     const input = applyArtworkSchema.parse(req.body);
     const client = requirePlex();
     const item = await client.item(req.params.ratingKey);
-    await client.setArtwork(req.params.ratingKey, input.kind, input.url);
+    if (/^https?:\/\//i.test(input.url)) {
+      // Download server-side and push the bytes to Plex — more reliable than
+      // having Plex fetch the URL (hotlink protection, HTML pages, redirects).
+      const image = await fetchRemoteImage(input.url);
+      await client.uploadArtwork(req.params.ratingKey, input.kind, image.buffer, image.contentType);
+    } else {
+      await client.setArtwork(req.params.ratingKey, input.kind, input.url);
+    }
     if (item.librarySectionId) {
       await client.lockArtwork(
         item.librarySectionId,

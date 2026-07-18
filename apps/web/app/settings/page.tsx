@@ -360,7 +360,7 @@ function MediuxImportCard() {
             </p>
             <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
               {results.map((r) => (
-                <div key={r.tmdbId} className="flex items-center gap-2.5 text-sm">
+                <div key={r.id} className="flex items-center gap-2.5 text-sm">
                   {r.thumb ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -372,7 +372,7 @@ function MediuxImportCard() {
                     <span className="h-9 w-6 rounded bg-secondary" />
                   )}
                   <span className="flex-1 truncate">
-                    {r.title ?? `tmdb:${r.tmdbId}`}
+                    {r.title ?? `id ${r.id}`}
                     <span className="ml-1.5 text-xs text-muted-foreground">
                       {[r.hasPoster && "poster", r.hasBackground && "background"]
                         .filter(Boolean)
