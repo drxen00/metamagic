@@ -1,4 +1,5 @@
 import Fastify from "fastify";
+import cookie from "@fastify/cookie";
 import {
   collectionItemsSchema,
   createCollectionSchema,
@@ -10,11 +11,22 @@ import { HOST, PORT } from "./env.js";
 import { deleteConnection, getConnection, saveConnection } from "./db.js";
 import { PlexClient, PlexError } from "./plex.js";
 import { plexClient, requirePlex } from "./client-store.js";
+import { registerAuth } from "./auth.js";
+import { registerEditingRoutes } from "./routes-editing.js";
+import { TmdbError } from "./tmdb.js";
+import { MediuxError } from "./mediux.js";
 
-const app = Fastify({ logger: { level: "info" } });
+const app = Fastify({ logger: { level: "info" }, bodyLimit: 20 * 1024 * 1024 });
+
+await app.register(cookie);
+
+// Raw image bodies for poster uploads
+app.addContentTypeParser(/^image\//, { parseAs: "buffer" }, (_req, body, done) => {
+  done(null, body);
+});
 
 app.setErrorHandler((err: unknown, _req, reply) => {
-  if (err instanceof PlexError) {
+  if (err instanceof PlexError || err instanceof TmdbError) {
     return reply.status(err.status && err.status >= 400 ? err.status : 502).send({
       error: err.message,
     });
@@ -23,9 +35,15 @@ app.setErrorHandler((err: unknown, _req, reply) => {
   if (e.validation || e.name === "ZodError") {
     return reply.status(400).send({ error: e.message ?? "Invalid request" });
   }
+  if (err instanceof MediuxError) {
+    return reply.status(400).send({ error: err.message });
+  }
   app.log.error(err);
   return reply.status(500).send({ error: "Internal server error" });
 });
+
+registerAuth(app);
+registerEditingRoutes(app);
 
 app.get("/api/health", async () => ({ status: "ok", app: "metamagic" }));
 

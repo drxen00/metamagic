@@ -3,8 +3,15 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Server, Unplug, XCircle } from "lucide-react";
-import type { ConnectionStatus, LibrarySection, PlexServerInfo } from "@metamagic/shared";
+import type {
+  ConnectionStatus,
+  IntegrationsStatus,
+  LibrarySection,
+  MediuxMatch,
+  PlexServerInfo,
+} from "@metamagic/shared";
 import { api } from "@/lib/api";
+import { imageUrl } from "@/lib/utils";
 import { Topbar } from "@/components/shell/topbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -175,7 +182,321 @@ export default function SettingsPage() {
             </div>
           </CardContent>
         </Card>
+
+        <IntegrationsCard />
+        <MediuxImportCard />
+        <AccountCard />
       </div>
     </main>
+  );
+}
+
+function IntegrationsCard() {
+  const qc = useQueryClient();
+  const [tmdbKey, setTmdbKey] = React.useState("");
+  const [mediuxToken, setMediuxToken] = React.useState("");
+
+  const { data: status } = useQuery({
+    queryKey: ["integrations"],
+    queryFn: () => api<IntegrationsStatus>("/api/settings/integrations"),
+  });
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body: Record<string, string> = {};
+      if (tmdbKey) body.tmdbApiKey = tmdbKey;
+      if (mediuxToken) body.mediuxToken = mediuxToken;
+      return api<IntegrationsStatus>("/api/settings/integrations", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: () => {
+      setTmdbKey("");
+      setMediuxToken("");
+      qc.invalidateQueries({ queryKey: ["integrations"] });
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Integrations</CardTitle>
+        <CardDescription>
+          Keys are encrypted at rest. A free TMDb API key unlocks the TMDb tab in the poster
+          picker —{" "}
+          <a
+            href="https://www.themoviedb.org/settings/api"
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            get one here
+          </a>
+          .
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="tmdb-key">TMDb API key (v3)</Label>
+            {status?.tmdbConfigured && <Badge variant="success">configured</Badge>}
+          </div>
+          <Input
+            id="tmdb-key"
+            type="password"
+            placeholder={status?.tmdbConfigured ? "•••••••• (saved)" : "TMDb API key"}
+            value={tmdbKey}
+            onChange={(e) => setTmdbKey(e.target.value)}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <Label htmlFor="mediux-token">MediUX API token</Label>
+            {status?.mediuxTokenConfigured && <Badge variant="success">configured</Badge>}
+            <span className="text-xs text-muted-foreground">
+              optional — their API is invite-only beta; set import below works without it
+            </span>
+          </div>
+          <Input
+            id="mediux-token"
+            type="password"
+            placeholder={status?.mediuxTokenConfigured ? "•••••••• (saved)" : "MediUX token"}
+            value={mediuxToken}
+            onChange={(e) => setMediuxToken(e.target.value)}
+          />
+        </div>
+        {save.isError && (
+          <p className="flex items-center gap-2 text-sm text-destructive">
+            <XCircle className="h-4 w-4 shrink-0" /> {(save.error as Error).message}
+          </p>
+        )}
+        {save.isSuccess && (
+          <p className="flex items-center gap-2 text-sm text-success">
+            <CheckCircle2 className="h-4 w-4" /> Saved.
+          </p>
+        )}
+        <Button
+          loading={save.isPending}
+          disabled={!tmdbKey && !mediuxToken}
+          onClick={() => save.mutate()}
+        >
+          Save keys
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function MediuxImportCard() {
+  const qc = useQueryClient();
+  const [yamlText, setYamlText] = React.useState("");
+  const [results, setResults] = React.useState<MediuxMatch[] | null>(null);
+  const [mode, setMode] = React.useState<"preview" | "apply" | null>(null);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const run = useMutation({
+    mutationFn: (which: "preview" | "apply") =>
+      api<MediuxMatch[]>(`/api/mediux/${which}`, {
+        method: "POST",
+        body: JSON.stringify({ yaml: yamlText }),
+      }),
+    onSuccess: (data, which) => {
+      setResults(data);
+      setMode(which);
+      setError(null);
+      if (which === "apply") {
+        qc.invalidateQueries({ queryKey: ["items"] });
+        qc.invalidateQueries({ queryKey: ["collections"] });
+      }
+    },
+    onError: (e) => setError((e as Error).message),
+  });
+
+  const matched = results?.filter((r) => r.ratingKey).length ?? 0;
+  const applied = results?.filter((r) => r.applied).length ?? 0;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Import a MediUX set</CardTitle>
+        <CardDescription>
+          On any{" "}
+          <a
+            href="https://mediux.pro"
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            mediux.pro
+          </a>{" "}
+          set page, hit “Copy YAML” and paste it here. MetaMagic matches titles to your libraries
+          by TMDb id and applies posters &amp; backgrounds (locked so refreshes keep them).
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <textarea
+          value={yamlText}
+          onChange={(e) => {
+            setYamlText(e.target.value);
+            setResults(null);
+            setMode(null);
+          }}
+          rows={6}
+          placeholder={"metadata:\n  \"603692\":\n    url_poster: https://api.mediux.pro/assets/…"}
+          className="w-full rounded-md border border-input bg-background/50 px-3 py-2 font-mono text-xs leading-relaxed placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
+        {error && (
+          <p className="flex items-center gap-2 text-sm text-destructive">
+            <XCircle className="h-4 w-4 shrink-0" /> {error}
+          </p>
+        )}
+        {results && (
+          <div className="space-y-2 rounded-md border border-border bg-secondary/30 p-3">
+            <p className="text-sm font-medium">
+              {mode === "apply"
+                ? `Applied ${applied} of ${results.length} entries`
+                : `${matched} of ${results.length} entries match your libraries`}
+            </p>
+            <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
+              {results.map((r) => (
+                <div key={r.tmdbId} className="flex items-center gap-2.5 text-sm">
+                  {r.thumb ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={imageUrl(r.thumb, 40, 60)}
+                      alt=""
+                      className="h-9 w-6 rounded object-cover"
+                    />
+                  ) : (
+                    <span className="h-9 w-6 rounded bg-secondary" />
+                  )}
+                  <span className="flex-1 truncate">
+                    {r.title ?? `tmdb:${r.tmdbId}`}
+                    <span className="ml-1.5 text-xs text-muted-foreground">
+                      {[r.hasPoster && "poster", r.hasBackground && "background"]
+                        .filter(Boolean)
+                        .join(" + ")}
+                    </span>
+                  </span>
+                  {mode === "apply" ? (
+                    r.applied ? (
+                      <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
+                    ) : (
+                      <span className="text-xs text-destructive">{r.error}</span>
+                    )
+                  ) : r.ratingKey ? (
+                    <Badge variant="success">match</Badge>
+                  ) : (
+                    <Badge variant="outline">not in library</Badge>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            loading={run.isPending && run.variables === "preview"}
+            disabled={!yamlText.trim() || run.isPending}
+            onClick={() => run.mutate("preview")}
+          >
+            Preview matches
+          </Button>
+          <Button
+            loading={run.isPending && run.variables === "apply"}
+            disabled={!yamlText.trim() || run.isPending || (mode === "preview" && matched === 0)}
+            onClick={() => run.mutate("apply")}
+          >
+            Apply to library
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function AccountCard() {
+  const [current, setCurrent] = React.useState("");
+  const [next, setNext] = React.useState("");
+  const [confirm, setConfirm] = React.useState("");
+  const [error, setError] = React.useState<string | null>(null);
+
+  const change = useMutation({
+    mutationFn: () => {
+      if (next !== confirm) throw new Error("New passwords don't match.");
+      return api("/api/auth/password", {
+        method: "POST",
+        body: JSON.stringify({ currentPassword: current, newPassword: next }),
+      });
+    },
+    onSuccess: () => {
+      setCurrent("");
+      setNext("");
+      setConfirm("");
+      setError(null);
+    },
+    onError: (e) => setError((e as Error).message),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Account</CardTitle>
+        <CardDescription>Change the password you use to sign in to MetaMagic.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="space-y-1.5">
+          <Label htmlFor="pw-current">Current password</Label>
+          <Input
+            id="pw-current"
+            type="password"
+            autoComplete="current-password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+          />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="pw-next">New password</Label>
+            <Input
+              id="pw-next"
+              type="password"
+              autoComplete="new-password"
+              value={next}
+              onChange={(e) => setNext(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="pw-confirm">Confirm new password</Label>
+            <Input
+              id="pw-confirm"
+              type="password"
+              autoComplete="new-password"
+              value={confirm}
+              onChange={(e) => setConfirm(e.target.value)}
+            />
+          </div>
+        </div>
+        {error && (
+          <p className="flex items-center gap-2 text-sm text-destructive">
+            <XCircle className="h-4 w-4 shrink-0" /> {error}
+          </p>
+        )}
+        {change.isSuccess && !error && (
+          <p className="flex items-center gap-2 text-sm text-success">
+            <CheckCircle2 className="h-4 w-4" /> Password changed.
+          </p>
+        )}
+        <Button
+          loading={change.isPending}
+          disabled={!current || !next || !confirm}
+          onClick={() => change.mutate()}
+        >
+          Change password
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

@@ -16,6 +16,24 @@ db.exec(`
     server_version TEXT,
     updated_at INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    pass_hash TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key TEXT PRIMARY KEY,
+    value_enc TEXT NOT NULL
+  );
 `);
 
 export interface StoredConnection {
@@ -71,4 +89,82 @@ export function saveConnection(conn: StoredConnection): void {
 
 export function deleteConnection(): void {
   db.prepare("DELETE FROM plex_connection WHERE id = 1").run();
+}
+
+// ---------- Users & sessions ----------
+
+export interface UserRow {
+  id: number;
+  username: string;
+  pass_hash: string;
+}
+
+export function userCount(): number {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number };
+  return row.n;
+}
+
+export function getUserByName(username: string): UserRow | undefined {
+  return db
+    .prepare("SELECT id, username, pass_hash FROM users WHERE username = ?")
+    .get(username) as UserRow | undefined;
+}
+
+export function getUserById(id: number): UserRow | undefined {
+  return db
+    .prepare("SELECT id, username, pass_hash FROM users WHERE id = ?")
+    .get(id) as UserRow | undefined;
+}
+
+export function createUser(username: string, passHash: string): void {
+  db.prepare("INSERT INTO users (username, pass_hash, created_at) VALUES (?, ?, ?)").run(
+    username,
+    passHash,
+    Date.now(),
+  );
+}
+
+export function updateUserPassword(id: number, passHash: string): void {
+  db.prepare("UPDATE users SET pass_hash = ? WHERE id = ?").run(passHash, id);
+}
+
+export function createSession(tokenHash: string, userId: number, expiresAt: number): void {
+  db.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)").run(
+    tokenHash,
+    userId,
+    expiresAt,
+  );
+  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(Date.now());
+}
+
+export function getSessionUserId(tokenHash: string): number | undefined {
+  const row = db
+    .prepare("SELECT user_id, expires_at FROM sessions WHERE token_hash = ?")
+    .get(tokenHash) as { user_id: number; expires_at: number } | undefined;
+  if (!row || row.expires_at < Date.now()) return undefined;
+  return row.user_id;
+}
+
+export function deleteSession(tokenHash: string): void {
+  db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+}
+
+// ---------- Encrypted app settings (API keys etc.) ----------
+
+export function getAppSetting(key: string): string | undefined {
+  const row = db.prepare("SELECT value_enc FROM app_settings WHERE key = ?").get(key) as
+    | { value_enc: string }
+    | undefined;
+  return row ? decrypt(row.value_enc) : undefined;
+}
+
+export function setAppSetting(key: string, value: string): void {
+  if (!value) {
+    db.prepare("DELETE FROM app_settings WHERE key = ?").run(key);
+    return;
+  }
+  db.prepare(
+    `INSERT INTO app_settings (key, value_enc) VALUES (?, ?)
+     ON CONFLICT(key) DO UPDATE SET value_enc = excluded.value_enc`,
+  ).run(key, encrypt(value));
 }

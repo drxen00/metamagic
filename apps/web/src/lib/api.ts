@@ -16,6 +16,14 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
+    if (
+      res.status === 401 &&
+      !path.startsWith("/api/auth/") &&
+      typeof window !== "undefined" &&
+      window.location.pathname !== "/login"
+    ) {
+      window.location.href = "/login";
+    }
     let message = `Request failed (${res.status})`;
     try {
       const body = (await res.json()) as { error?: string };

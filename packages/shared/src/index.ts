@@ -52,6 +52,9 @@ export interface MediaItem {
   genres?: string[];
   collections?: { tag: string; id?: string }[];
   labels?: string[];
+  titleSort?: string;
+  librarySectionId?: string;
+  tmdbId?: string;
 }
 
 export interface PagedResult<T> {
@@ -107,6 +110,99 @@ export interface DashboardData {
   server?: PlexServerInfo;
   sections: LibrarySection[];
   collectionCount: number;
+}
+
+// ---------- Auth ----------
+
+export const credentialsSchema = z.object({
+  username: z.string().min(1, "Username is required").max(64),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+});
+export type CredentialsInput = z.infer<typeof credentialsSchema>;
+
+export const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(8, "Password must be at least 8 characters"),
+});
+export type ChangePasswordInput = z.infer<typeof changePasswordSchema>;
+
+export interface AuthStatus {
+  setupRequired: boolean;
+  authenticated: boolean;
+  username?: string;
+}
+
+// ---------- Metadata editing ----------
+
+export const editItemSchema = z.object({
+  title: z.string().min(1).optional(),
+  titleSort: z.string().optional(),
+  summary: z.string().optional(),
+  addLabels: z.array(z.string().min(1)).optional(),
+  removeLabels: z.array(z.string().min(1)).optional(),
+  addGenres: z.array(z.string().min(1)).optional(),
+  removeGenres: z.array(z.string().min(1)).optional(),
+});
+export type EditItemInput = z.infer<typeof editItemSchema>;
+
+// ---------- Artwork ----------
+
+export type ArtworkKind = "poster" | "art";
+export type ArtworkSource = "plex" | "tmdb";
+
+export interface ArtworkOption {
+  /** Value to POST back to apply this artwork (plex poster ratingKey or remote URL) */
+  applyUrl: string;
+  /** Browser-loadable preview URL */
+  previewUrl: string;
+  provider: string;
+  selected?: boolean;
+}
+
+export const applyArtworkSchema = z.object({
+  kind: z.enum(["poster", "art"]),
+  url: z.string().min(1),
+});
+export type ApplyArtworkInput = z.infer<typeof applyArtworkSchema>;
+
+// ---------- Collections editing ----------
+
+export const editCollectionSchema = z.object({
+  title: z.string().min(1).optional(),
+  summary: z.string().optional(),
+});
+export type EditCollectionInput = z.infer<typeof editCollectionSchema>;
+
+// ---------- Integrations ----------
+
+export interface IntegrationsStatus {
+  tmdbConfigured: boolean;
+  mediuxTokenConfigured: boolean;
+}
+
+export const integrationsSchema = z.object({
+  tmdbApiKey: z.string().optional(),
+  mediuxToken: z.string().optional(),
+});
+export type IntegrationsInput = z.infer<typeof integrationsSchema>;
+
+// ---------- MediUX import ----------
+
+export const mediuxImportSchema = z.object({
+  yaml: z.string().min(1, "Paste the YAML from a MediUX set page"),
+});
+export type MediuxImportInput = z.infer<typeof mediuxImportSchema>;
+
+export interface MediuxMatch {
+  tmdbId: string;
+  title?: string;
+  ratingKey?: string;
+  thumb?: string;
+  hasPoster: boolean;
+  hasBackground: boolean;
+  /** Only present in apply results */
+  applied?: boolean;
+  error?: string;
 }
 
 // ---------- API error envelope ----------

@@ -31,6 +31,7 @@ interface PlexMetadata {
   ratingKey: string;
   key: string;
   title: string;
+  titleSort?: string;
   type: string;
   year?: number;
   thumb?: string;
@@ -43,11 +44,14 @@ interface PlexMetadata {
   addedAt?: number;
   viewCount?: number;
   childCount?: number;
+  selected?: boolean;
+  provider?: string;
   librarySectionID?: number | string;
   librarySectionTitle?: string;
   Genre?: { tag: string; id?: number }[];
   Collection?: { tag: string; id?: number }[];
   Label?: { tag: string }[];
+  Guid?: { id: string }[];
   Media?: { videoResolution?: string }[];
 }
 
@@ -70,6 +74,15 @@ interface PlexContainer {
 
 const SECTION_TYPE_IDS: Record<string, number> = { movie: 1, show: 2, artist: 8, photo: 13 };
 
+/** Plex metadata type ids used by the /library/sections/{id}/all edit endpoint. */
+export const EDIT_TYPE_IDS: Record<string, number> = {
+  movie: 1,
+  show: 2,
+  season: 3,
+  episode: 4,
+  collection: 18,
+};
+
 export class PlexClient {
   constructor(
     private baseUrl: string,
@@ -80,7 +93,7 @@ export class PlexClient {
   private async request<T = PlexContainer>(
     pathname: string,
     params: Record<string, string | number | undefined> = {},
-    init: { method?: string } = {},
+    init: { method?: string; body?: Buffer; contentType?: string } = {},
   ): Promise<T> {
     const url = new URL(pathname, this.baseUrl);
     for (const [k, v] of Object.entries(params)) {
@@ -92,8 +105,11 @@ export class PlexClient {
     try {
       res = await fetch(url, {
         method: init.method ?? "GET",
-        headers: PLEX_HEADERS,
-        signal: AbortSignal.timeout(15_000),
+        headers: init.body
+          ? { ...PLEX_HEADERS, "Content-Type": init.contentType ?? "application/octet-stream" }
+          : PLEX_HEADERS,
+        body: init.body,
+        signal: AbortSignal.timeout(30_000),
       });
     } catch (err) {
       throw new PlexError(
@@ -146,6 +162,7 @@ export class PlexClient {
       "X-Plex-Container-Size": q.limit,
       sort: q.sort ?? "titleSort:asc",
       includeCollections: 1,
+      includeGuids: 1,
     };
     if (q.search) params.title = q.search;
     if (q.genre) params.genre = q.genre;
@@ -245,6 +262,92 @@ export class PlexClient {
     await this.request(`/library/collections/${ratingKey}`, {}, { method: "DELETE" });
   }
 
+  /**
+   * Edit metadata fields via the section-level PUT endpoint (the same API the
+   * Plex web editor uses). Values set here are locked so agent refreshes
+   * don't overwrite them.
+   */
+  async editMetadata(
+    sectionId: string,
+    typeId: number,
+    ratingKey: string,
+    params: Record<string, string | number>,
+  ): Promise<void> {
+    await this.request(
+      `/library/sections/${sectionId}/all`,
+      { type: typeId, id: ratingKey, ...params },
+      { method: "PUT" },
+    );
+  }
+
+  buildFieldParams(fields: {
+    title?: string;
+    titleSort?: string;
+    summary?: string;
+  }): Record<string, string | number> {
+    const params: Record<string, string | number> = {};
+    for (const [key, value] of Object.entries(fields)) {
+      if (value !== undefined) {
+        params[`${key}.value`] = value;
+        params[`${key}.locked`] = 1;
+      }
+    }
+    return params;
+  }
+
+  buildTagParams(
+    tagType: "label" | "genre",
+    current: string[],
+    add: string[] = [],
+    remove: string[] = [],
+  ): Record<string, string | number> {
+    const params: Record<string, string | number> = {};
+    const removeSet = new Set(remove.map((t) => t.toLowerCase()));
+    const next = [...current.filter((t) => !removeSet.has(t.toLowerCase())), ...add];
+    next.forEach((tag, i) => {
+      params[`${tagType}[${i}].tag.tag`] = tag;
+    });
+    if (remove.length > 0) {
+      params[`${tagType}[].tag.tag-`] = remove.join(",");
+    }
+    params[`${tagType}.locked`] = 1;
+    return params;
+  }
+
+  async listArtwork(ratingKey: string, kind: "poster" | "art"): Promise<PlexMetadata[]> {
+    const data = await this.request(`/library/metadata/${ratingKey}/${kind}s`);
+    return data.MediaContainer.Metadata ?? [];
+  }
+
+  /** Apply artwork: `url` is either a Plex artwork ratingKey or a remote http(s) URL. */
+  async setArtwork(ratingKey: string, kind: "poster" | "art", url: string): Promise<void> {
+    await this.request(`/library/metadata/${ratingKey}/${kind}`, { url }, { method: "PUT" });
+  }
+
+  async uploadArtwork(
+    ratingKey: string,
+    kind: "poster" | "art",
+    image: Buffer,
+    contentType: string,
+  ): Promise<void> {
+    await this.request(`/library/metadata/${ratingKey}/${kind}s`, {}, {
+      method: "POST",
+      body: image,
+      contentType,
+    });
+  }
+
+  /** Lock the artwork field (thumb/art) so metadata refreshes keep the choice. */
+  async lockArtwork(
+    sectionId: string,
+    typeId: number,
+    ratingKey: string,
+    kind: "poster" | "art",
+  ): Promise<void> {
+    const field = kind === "poster" ? "thumb" : "art";
+    await this.editMetadata(sectionId, typeId, ratingKey, { [`${field}.locked`]: 1 });
+  }
+
   imageUrl(imagePath: string, width: number, height: number): string {
     const url = new URL("/photo/:/transcode", this.baseUrl);
     url.searchParams.set("width", String(width));
@@ -258,9 +361,13 @@ export class PlexClient {
 }
 
 function toMediaItem(m: PlexMetadata): MediaItem {
+  const tmdbGuid = m.Guid?.find((g) => g.id.startsWith("tmdb://"));
   return {
     ratingKey: m.ratingKey,
     title: m.title,
+    titleSort: m.titleSort,
+    librarySectionId: m.librarySectionID !== undefined ? String(m.librarySectionID) : undefined,
+    tmdbId: tmdbGuid?.id.replace("tmdb://", ""),
     type: m.type,
     year: m.year,
     thumb: m.thumb,
