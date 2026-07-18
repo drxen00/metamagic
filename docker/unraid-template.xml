@@ -1,0 +1,24 @@
+<?xml version="1.0"?>
+<Container version="2">
+  <Name>MetaMagic</Name>
+  <Repository>ghcr.io/drxen00/metamagic:latest</Repository>
+  <Registry>https://ghcr.io/drxen00/metamagic</Registry>
+  <Network>bridge</Network>
+  <Shell>sh</Shell>
+  <Privileged>false</Privileged>
+  <Support>https://github.com/drxen00/metamagic/issues</Support>
+  <Project>https://github.com/drxen00/metamagic</Project>
+  <Overview>MetaMagic is a Plex library manager with a first-class GUI. Browse your libraries with poster grids, edit collections item-by-item or in bulk with live preview, and (soon) build Kometa-style rules and overlays without touching YAML. Your Plex token is encrypted at rest and never sent to the browser.</Overview>
+  <Category>MediaApp:Other Tools:</Category>
+  <WebUI>http://[IP]:[PORT:3800]</WebUI>
+  <TemplateURL/>
+  <Icon>https://raw.githubusercontent.com/drxen00/metamagic/main/docker/icon.png</Icon>
+  <ExtraParams/>
+  <PostArgs/>
+  <DonateText/>
+  <DonateLink/>
+  <Config Name="WebUI Port" Target="3800" Default="3800" Mode="tcp" Description="Port for the MetaMagic web interface" Type="Port" Display="always" Required="true" Mask="false">3800</Config>
+  <Config Name="Config" Target="/config" Default="/mnt/user/appdata/metamagic" Mode="rw" Description="Stores the database and encrypted Plex credentials" Type="Path" Display="always" Required="true" Mask="false">/mnt/user/appdata/metamagic</Config>
+  <Config Name="PUID" Target="PUID" Default="99" Description="User ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false">99</Config>
+  <Config Name="PGID" Target="PGID" Default="100" Description="Group ID for file permissions" Type="Variable" Display="advanced" Required="false" Mask="false">100</Config>
+</Container>

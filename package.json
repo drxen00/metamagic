@@ -1,0 +1,12 @@
+{
+  "name": "metamagic",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.14.0",
+  "description": "MetaMagic — a Plex library manager with a first-class GUI: granular per-item control and mass operations with live preview.",
+  "scripts": {
+    "dev": "pnpm --parallel -r dev",
+    "build": "pnpm -r build",
+    "start": "pnpm -r start"
+  }
+}
