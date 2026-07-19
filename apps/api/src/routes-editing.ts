@@ -87,7 +87,9 @@ function classifyArtworkUrl(
     return { source: "tmdb", label: "TMDb", url };
   }
   if (/^https?:\/\/api\.mediux\.pro\//i.test(rawUrl)) {
-    return { source: "mediux", label: "MediUX", url: undefined };
+    // Keep the pasted asset link — no set page is derivable from it, but a
+    // link back to the exact image is still useful provenance.
+    return { source: "mediux", label: "MediUX", url: rawUrl };
   }
   try {
     return { source: "url", label: new URL(rawUrl).hostname, url: rawUrl };

@@ -24,7 +24,7 @@ import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface PosterPickerProps {
@@ -52,13 +52,14 @@ export function PosterPicker({
   const qc = useQueryClient();
   const [tab, setTab] = React.useState<Tab>("plex");
   const [url, setUrl] = React.useState("");
-  const [sourceUrl, setSourceUrl] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
   const [setJobId, setSetJobId] = React.useState<string | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
 
   const isCollection = itemType === "collection";
-  const isSetUrl = TPDB_SET_RE.test(url.trim());
+  const cleanUrl = url.trim();
+  const isSetUrl = TPDB_SET_RE.test(cleanUrl);
+  const isValidUrl = /^https?:\/\//i.test(cleanUrl);
 
   const { data: integrations } = useQuery({
     queryKey: ["integrations"],
@@ -106,11 +107,7 @@ export function PosterPicker({
     mutationFn: (applyUrl: string) =>
       api(`/api/items/${ratingKey}/artwork`, {
         method: "POST",
-        body: JSON.stringify({
-          kind,
-          url: applyUrl,
-          ...(sourceUrl.trim() ? { sourceUrl: sourceUrl.trim() } : {}),
-        }),
+        body: JSON.stringify({ kind, url: applyUrl }),
       }),
     onSuccess: () => {
       invalidate();
@@ -124,7 +121,7 @@ export function PosterPicker({
     mutationFn: () =>
       api<{ jobId: string }>(`/api/collections/${ratingKey}/tpdb-set`, {
         method: "POST",
-        body: JSON.stringify({ url: url.trim() }),
+        body: JSON.stringify({ url: cleanUrl }),
       }),
     onSuccess: (data) => setSetJobId(data.jobId),
     onError: (e) => setError((e as Error).message),
@@ -298,34 +295,23 @@ export function PosterPicker({
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 onKeyDown={(e) => {
-                  if (e.key !== "Enter" || !url) return;
+                  if (e.key !== "Enter" || !isValidUrl) return;
                   if (isCollection && isSetUrl) applySet.mutate();
-                  else apply.mutate(url);
+                  else apply.mutate(cleanUrl);
                 }}
               />
               <Button
-                onClick={() => (isCollection && isSetUrl ? applySet.mutate() : apply.mutate(url))}
-                disabled={!/^https?:\/\//.test(url) || applySet.isPending || !!setJobId}
+                onClick={() =>
+                  isCollection && isSetUrl ? applySet.mutate() : apply.mutate(cleanUrl)
+                }
+                disabled={
+                  !isValidUrl || apply.isPending || applySet.isPending || setJob?.status === "running"
+                }
                 loading={apply.isPending || applySet.isPending}
               >
                 <Link2 className="h-4 w-4" /> {isCollection && isSetUrl ? "Import set" : "Apply"}
               </Button>
             </div>
-
-            {!isSetUrl && (
-              <div className="space-y-1.5">
-                <Label htmlFor="source-url" className="text-xs text-muted-foreground">
-                  Where's it from? Optional page link, saved as this artwork's source (e.g. the
-                  MediUX set or TPDb page)
-                </Label>
-                <Input
-                  id="source-url"
-                  placeholder="https://mediux.pro/sets/…  (optional)"
-                  value={sourceUrl}
-                  onChange={(e) => setSourceUrl(e.target.value)}
-                />
-              </div>
-            )}
 
             {setJob && (
               <div className="space-y-2 rounded-md border border-border/60 bg-secondary/30 p-3">

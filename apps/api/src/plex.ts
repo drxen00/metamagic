@@ -126,7 +126,13 @@ export class PlexClient {
     }
     const text = await res.text();
     if (!text) return {} as T;
-    return JSON.parse(text) as T;
+    try {
+      return JSON.parse(text) as T;
+    } catch {
+      // Some write endpoints (poster/art PUTs) answer with a plain-text path
+      // even when Accept: application/json is sent — the operation succeeded.
+      return {} as T;
+    }
   }
 
   async identity(): Promise<PlexServerInfo> {
