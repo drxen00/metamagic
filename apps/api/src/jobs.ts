@@ -5,9 +5,12 @@ const JOB_TTL_MS = 60 * 60 * 1000;
 
 const jobs = new Map<string, JobStatus>();
 
+const MAX_LOG_LINES = 2000;
+
 export interface JobReporter<T> {
   setCurrent: (line: string) => void;
   push: (result: T) => void;
+  log: (line: string) => void;
 }
 
 /** Run `runner` in the background; poll the returned job id for progress. */
@@ -21,7 +24,7 @@ export function startJob<T>(
   }
 
   const id = `${Date.now()}:${crypto.randomBytes(8).toString("hex")}`;
-  const job: JobStatus<T> = { id, kind, status: "running", results: [] };
+  const job: JobStatus<T> = { id, kind, status: "running", results: [], log: [] };
   jobs.set(id, job as JobStatus);
 
   const report: JobReporter<T> = {
@@ -30,6 +33,10 @@ export function startJob<T>(
     },
     push: (result) => {
       job.results.push(result);
+    },
+    log: (line) => {
+      job.log.push(line);
+      if (job.log.length > MAX_LOG_LINES) job.log.splice(0, job.log.length - MAX_LOG_LINES);
     },
   };
 

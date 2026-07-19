@@ -11,8 +11,10 @@ import type {
   ArtworkLinks,
   ArtworkOption,
   ArtworkProvenance,
+  CollectionCompleteness,
   IntegrationsStatus,
   MediaItem,
+  MissingCollectionItem,
 } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
 import { EDIT_TYPE_IDS, PlexError } from "./plex.js";
@@ -23,11 +25,13 @@ import {
   setAppSetting,
 } from "./db.js";
 import {
+  getTmdbCollectionParts,
   searchTmdbCollection,
   tmdbArtwork,
   tmdbSeasonArtwork,
   validateTmdbKey,
 } from "./tmdb.js";
+import { indexByIds } from "./mediux.js";
 import { applyMediux, previewMediux } from "./mediux.js";
 import { fetchRemoteImage } from "./remote-image.js";
 import { startJob, getJob } from "./jobs.js";
@@ -339,6 +343,42 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     );
     return { jobId: job.id };
   });
+
+  // ---------- Collection completeness (via TMDb) ----------
+
+  app.get<{ Params: { ratingKey: string } }>(
+    "/api/collections/:ratingKey/missing",
+    async (req): Promise<CollectionCompleteness> => {
+      const client = requirePlex();
+      const collection = await client.item(req.params.ratingKey);
+      const cleaned = cleanCollectionTitle(collection.title);
+      const collectionId = await searchTmdbCollection(cleaned);
+      if (!collectionId) return { missing: [], inLibraryNotInCollection: [] };
+      const tmdbCollection = await getTmdbCollectionParts(collectionId);
+      if (!tmdbCollection) return { missing: [], inLibraryNotInCollection: [] };
+
+      const children = await client.collectionChildren(req.params.ratingKey);
+      const inCollection = new Set(children.map((c) => c.tmdbId).filter(Boolean));
+      const libraryIndex = await indexByIds(client);
+
+      const missing: MissingCollectionItem[] = tmdbCollection.parts
+        .filter((p) => !inCollection.has(p.tmdbId))
+        .map((p) => ({
+          tmdbId: p.tmdbId,
+          title: p.title,
+          year: p.year,
+          posterUrl: p.posterUrl,
+          ratingKey: libraryIndex.get(`tmdb:${p.tmdbId}`)?.ratingKey,
+        }));
+
+      return {
+        tmdbCollectionName: tmdbCollection.name,
+        tmdbCollectionUrl: `https://www.themoviedb.org/collection/${tmdbCollection.id}`,
+        missing,
+        inLibraryNotInCollection: missing.filter((m) => m.ratingKey),
+      };
+    },
+  );
 
   // ---------- ThePosterDB set import (collections) ----------
 

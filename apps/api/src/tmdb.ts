@@ -96,3 +96,92 @@ export async function searchTmdbCollection(query: string): Promise<number | unde
   );
   return data.results?.[0]?.id;
 }
+
+export function tmdbConfigured(): boolean {
+  return !!getAppSetting("tmdb_api_key");
+}
+
+export interface ResolvedTitle {
+  title: string;
+  year?: number;
+  posterUrl?: string;
+}
+
+interface TmdbTitleResponse {
+  title?: string;
+  name?: string;
+  release_date?: string;
+  first_air_date?: string;
+  poster_path?: string | null;
+}
+
+interface TmdbFindResponse {
+  movie_results?: TmdbTitleResponse[];
+  tv_results?: TmdbTitleResponse[];
+}
+
+function toResolved(r: TmdbTitleResponse | undefined): ResolvedTitle | undefined {
+  if (!r) return undefined;
+  const title = r.title ?? r.name;
+  if (!title) return undefined;
+  const date = r.release_date ?? r.first_air_date;
+  return {
+    title,
+    year: date ? Number(date.slice(0, 4)) || undefined : undefined,
+    posterUrl: r.poster_path ? `${IMG_PREVIEW}${r.poster_path}` : undefined,
+  };
+}
+
+/**
+ * Best-effort title lookup for a bare id from a MediUX YAML (TMDb id for
+ * movies, TVDb id for shows). Returns undefined when nothing matches or no
+ * API key is configured.
+ */
+export async function resolveTitleById(id: string): Promise<ResolvedTitle | undefined> {
+  if (!tmdbConfigured()) return undefined;
+  // TVDb id (shows) via TMDb's find endpoint first — MediUX show sets use TVDb.
+  try {
+    const found = await tmdbFetch<TmdbFindResponse>(`/find/${id}?external_source=tvdb_id`);
+    const hit = toResolved(found.tv_results?.[0]) ?? toResolved(found.movie_results?.[0]);
+    if (hit) return hit;
+  } catch {
+    // fall through
+  }
+  for (const path of [`/movie/${id}`, `/tv/${id}`]) {
+    try {
+      const hit = toResolved(await tmdbFetch<TmdbTitleResponse>(path));
+      if (hit) return hit;
+    } catch {
+      // try next
+    }
+  }
+  return undefined;
+}
+
+interface TmdbCollectionDetail {
+  name?: string;
+  parts?: (TmdbTitleResponse & { id: number })[];
+}
+
+export interface TmdbCollectionParts {
+  id: number;
+  name: string;
+  parts: (ResolvedTitle & { tmdbId: string })[];
+}
+
+/** All movies belonging to a TMDb collection. */
+export async function getTmdbCollectionParts(
+  collectionId: number,
+): Promise<TmdbCollectionParts | undefined> {
+  const data = await tmdbFetch<TmdbCollectionDetail>(`/collection/${collectionId}`);
+  if (!data.name) return undefined;
+  const parts = (data.parts ?? [])
+    .map((p) => {
+      const resolved = toResolved(p);
+      return resolved ? { ...resolved, tmdbId: String(p.id) } : undefined;
+    })
+    .filter((p): p is ResolvedTitle & { tmdbId: string } => !!p)
+    // Unreleased/undated entries are usually announced-only placeholders.
+    .filter((p) => p.year !== undefined);
+  return { id: collectionId, name: data.name, parts };
+}

@@ -3,8 +3,9 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Pencil, Plus, Search, SquareStack, Trash2, X } from "lucide-react";
+import { Check, ExternalLink, Pencil, Plus, Search, SquareStack, Trash2, X } from "lucide-react";
 import type {
+  CollectionCompleteness,
   EditCollectionInput,
   LibrarySection,
   MediaItem,
@@ -54,6 +55,14 @@ export default function CollectionsPage() {
     enabled: !!openKey,
   });
 
+  const { data: completeness } = useQuery({
+    queryKey: ["collection-missing", openKey],
+    queryFn: () => api<CollectionCompleteness>(`/api/collections/${openKey}/missing`),
+    enabled: !!openKey,
+    retry: false,
+    staleTime: 5 * 60_000,
+  });
+
   React.useEffect(() => {
     const t = setTimeout(() => setDebouncedAddSearch(addSearch), 300);
     return () => clearTimeout(t);
@@ -77,6 +86,7 @@ export default function CollectionsPage() {
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["collections"] });
     qc.invalidateQueries({ queryKey: ["collection-children"] });
+    qc.invalidateQueries({ queryKey: ["collection-missing"] });
     qc.invalidateQueries({ queryKey: ["items"] });
     qc.invalidateQueries({ queryKey: ["item"] });
     qc.invalidateQueries({ queryKey: ["dashboard"] });
@@ -401,6 +411,73 @@ export default function CollectionsPage() {
                 </div>
               )}
             </div>
+
+            {/* Missing from this collection (matched via TMDb) */}
+            {completeness?.tmdbCollectionName && (
+              <div className="space-y-2 pt-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                    Missing from this collection
+                  </h3>
+                  {completeness.tmdbCollectionUrl && (
+                    <a
+                      href={completeness.tmdbCollectionUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+                    >
+                      {completeness.tmdbCollectionName} <ExternalLink className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
+                {completeness.missing.length === 0 ? (
+                  <p className="flex items-center gap-1.5 text-sm text-success">
+                    <Check className="h-4 w-4" /> Complete — every entry from TMDb is here.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {completeness.missing.map((m) => (
+                      <div
+                        key={m.tmdbId}
+                        className="flex items-center gap-3 rounded-md px-2 py-1.5 text-sm"
+                      >
+                        {m.posterUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={m.posterUrl}
+                            alt=""
+                            loading="lazy"
+                            className="h-12 w-8 rounded object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-12 w-8 items-center justify-center rounded bg-secondary text-muted-foreground">
+                            ?
+                          </span>
+                        )}
+                        <span className="flex-1 truncate">
+                          {m.title}
+                          {m.year ? (
+                            <span className="text-muted-foreground"> ({m.year})</span>
+                          ) : null}
+                        </span>
+                        {m.ratingKey ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={addItem.isPending}
+                            onClick={() => addItem.mutate(m.ratingKey!)}
+                          >
+                            <Plus className="h-3.5 w-3.5" /> Add
+                          </Button>
+                        ) : (
+                          <Badge variant="outline">not in library</Badge>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Children */}
             {childrenLoading ? (

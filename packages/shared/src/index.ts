@@ -253,7 +253,31 @@ export interface JobStatus<T = unknown> {
   current?: string;
   /** Results accumulated so far (full list once status is done) */
   results: T[];
+  /** Rolling per-step transcript ("✓ Family Guy s03e12 card", …) */
+  log: string[];
   error?: string;
+}
+
+// ---------- Missing from collection ----------
+
+export interface MissingCollectionItem {
+  tmdbId: string;
+  title: string;
+  year?: number;
+  /** Absolute TMDb poster URL, when available */
+  posterUrl?: string;
+  /** Set when the movie is in the library (but not in the collection) — enables one-click add */
+  ratingKey?: string;
+}
+
+export interface CollectionCompleteness {
+  /** TMDb collection the Plex collection was matched to */
+  tmdbCollectionName?: string;
+  tmdbCollectionUrl?: string;
+  /** Titles in the TMDb collection that aren't in this Plex collection */
+  missing: MissingCollectionItem[];
+  /** Of which: already in the library, just not added to the collection */
+  inLibraryNotInCollection: MissingCollectionItem[];
 }
 
 export interface TpdbSetResult {

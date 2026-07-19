@@ -4,6 +4,7 @@ import type { PlexClient } from "./plex.js";
 import { EDIT_TYPE_IDS } from "./plex.js";
 import { fetchRemoteImage } from "./remote-image.js";
 import { recordArtworkSource } from "./db.js";
+import { resolveTitleById } from "./tmdb.js";
 
 /** MediUX "Copy YAML" embeds the set link in a comment — pull it out for provenance. */
 export function extractSetUrl(yamlText: string): { url?: string; label: string } {
@@ -163,7 +164,7 @@ interface IndexedItem {
 }
 
 /** Scan all movie/show sections and index items by both TMDb and TVDb ids. */
-async function indexByIds(client: PlexClient): Promise<Map<string, IndexedItem>> {
+export async function indexByIds(client: PlexClient): Promise<Map<string, IndexedItem>> {
   const index = new Map<string, IndexedItem>();
   for (const section of await client.sections()) {
     let offset = 0;
@@ -241,12 +242,13 @@ export async function previewMediux(client: PlexClient, yamlText: string): Promi
 
   for (const e of set.entries) {
     const hit = lookup(index, e.id);
+    const external = hit ? undefined : await resolveTitleById(e.id).catch(() => undefined);
     results.push({
       id: e.id,
       kind: "item",
-      title: hit?.title,
+      title: hit?.title ?? formatResolved(external),
       ratingKey: hit?.ratingKey,
-      thumb: hit?.thumb,
+      thumb: hit?.thumb ?? external?.posterUrl,
       hasPoster: !!e.urlPoster,
       hasBackground: !!e.urlBackground,
       seasonCount: seasonCount(e),
@@ -256,9 +258,15 @@ export async function previewMediux(client: PlexClient, yamlText: string): Promi
   return results;
 }
 
+function formatResolved(r: { title: string; year?: number } | undefined): string | undefined {
+  if (!r) return undefined;
+  return r.year ? `${r.title} (${r.year})` : r.title;
+}
+
 export interface ProgressReporter<T> {
   setCurrent: (line: string) => void;
   push: (result: T) => void;
+  log: (line: string) => void;
 }
 
 export async function applyMediux(
@@ -301,11 +309,14 @@ export async function applyMediux(
           recordArtworkSource(hit.ratingKey, "art", "mediux", origin.label, origin.url);
         }
         result.applied = true;
+        report?.log(`✓ ${result.title} — collection artwork applied`);
       } catch (err) {
         result.error = err instanceof Error ? err.message : "Failed to apply";
+        report?.log(`✗ ${result.title} — ${result.error}`);
       }
     } else {
       result.error = "No matching collection in Plex";
+      report?.log(`✗ ${c.name} — no matching collection in Plex`);
     }
     results.push(result);
     report?.push(result);
@@ -331,7 +342,11 @@ export async function applyMediux(
       appliedEpisodes: 0,
     };
     if (!hit) {
+      const external = await resolveTitleById(e.id).catch(() => undefined);
+      result.title = formatResolved(external);
+      result.thumb = external?.posterUrl;
       result.error = "Not found in your libraries";
+      report?.log(`✗ ${result.title ?? `id ${e.id}`} — not found in your libraries`);
       results.push(result);
       report?.push(result);
       continue;
@@ -343,14 +358,18 @@ export async function applyMediux(
       if (e.urlPoster) {
         await applyImage(client, hit.ratingKey, "poster", e.urlPoster, hit.sectionId, typeId);
         recordArtworkSource(hit.ratingKey, "poster", "mediux", origin.label, origin.url);
+        report?.log(`✓ ${hit.title} — poster applied`);
       }
       if (e.urlBackground) {
         await applyImage(client, hit.ratingKey, "art", e.urlBackground, hit.sectionId, typeId);
         recordArtworkSource(hit.ratingKey, "art", "mediux", origin.label, origin.url);
+        report?.log(`✓ ${hit.title} — background applied`);
       }
       result.applied = true;
     } catch (err) {
-      failures.push(err instanceof Error ? err.message : "poster/background failed");
+      const msg = err instanceof Error ? err.message : "poster/background failed";
+      failures.push(msg);
+      report?.log(`✗ ${hit.title} — ${msg}`);
     }
 
     if (Object.keys(e.seasons).length > 0 && hit.type === "show") {
@@ -360,6 +379,7 @@ export async function applyMediux(
           const season = plexSeasons.find((s) => s.index === Number(num));
           if (!season) {
             failures.push(`season ${num} not in Plex`);
+            report?.log(`✗ ${hit.title} — season ${num} not in Plex`);
             continue;
           }
           if (sd.urlPoster) {
@@ -374,8 +394,10 @@ export async function applyMediux(
               );
               result.appliedSeasons = (result.appliedSeasons ?? 0) + 1;
               result.applied = true;
+              report?.log(`✓ ${hit.title} — season ${num} poster applied`);
             } catch {
               failures.push(`season ${num} poster failed`);
+              report?.log(`✗ ${hit.title} — season ${num} poster failed`);
             }
           }
           const episodeEntries = Object.entries(sd.episodes);
@@ -385,8 +407,10 @@ export async function applyMediux(
               const episode = plexEpisodes.find((p) => p.index === Number(eNum));
               if (!episode) {
                 failures.push(`s${num}e${eNum} not in Plex`);
+                report?.log(`✗ ${hit.title} — s${num}e${eNum} not in Plex`);
                 continue;
               }
+              report?.setCurrent(`${hit.title} — applying s${num}e${eNum} card…`);
               try {
                 await applyImage(
                   client,
@@ -398,8 +422,10 @@ export async function applyMediux(
                 );
                 result.appliedEpisodes = (result.appliedEpisodes ?? 0) + 1;
                 result.applied = true;
+                report?.log(`✓ ${hit.title} — s${num}e${eNum} card applied`);
               } catch {
                 failures.push(`s${num}e${eNum} card failed`);
+                report?.log(`✗ ${hit.title} — s${num}e${eNum} card failed`);
               }
             }
           }

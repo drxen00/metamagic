@@ -347,6 +347,16 @@ function MediuxImportCard() {
   const matched = results?.filter((r) => r.ratingKey).length ?? 0;
   const applied = results?.filter((r) => r.applied).length ?? 0;
 
+  const logRef = React.useRef<HTMLDivElement>(null);
+  const logLength = job?.log?.length ?? 0;
+  React.useEffect(() => {
+    const el = logRef.current;
+    if (!el) return;
+    // Follow the tail unless the user scrolled up to inspect earlier lines
+    const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    if (nearBottom) el.scrollTop = el.scrollHeight;
+  }, [logLength]);
+
   return (
     <Card>
       <CardHeader>
@@ -403,13 +413,35 @@ function MediuxImportCard() {
                 `${matched} of ${results.length} entries match your libraries`
               )}
             </p>
+
+            {mode === "apply" && job && job.log.length > 0 && (
+              <div
+                ref={logRef}
+                className="max-h-44 overflow-y-auto rounded-md bg-background/60 p-2 font-mono text-xs leading-relaxed"
+              >
+                {job.log.map((line, i) => (
+                  <p
+                    key={i}
+                    className={
+                      line.startsWith("✗")
+                        ? "text-destructive"
+                        : line.startsWith("✓")
+                          ? "text-success"
+                          : "text-muted-foreground"
+                    }
+                  >
+                    {line}
+                  </p>
+                ))}
+              </div>
+            )}
             <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
               {results.map((r) => (
                 <div key={r.id} className="flex items-center gap-2.5 text-sm">
                   {r.thumb ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={imageUrl(r.thumb, 40, 60)}
+                      src={/^https?:\/\//.test(r.thumb) ? r.thumb : imageUrl(r.thumb, 40, 60)}
                       alt=""
                       className="h-9 w-6 rounded object-cover"
                     />
@@ -418,6 +450,9 @@ function MediuxImportCard() {
                   )}
                   <span className="flex-1 truncate">
                     {r.title ?? `id ${r.id}`}
+                    {!r.ratingKey && r.kind === "item" && r.title && (
+                      <span className="ml-1.5 text-xs text-muted-foreground">(not downloaded)</span>
+                    )}
                     {r.kind === "collection" && (
                       <Badge variant="outline" className="ml-1.5">
                         collection

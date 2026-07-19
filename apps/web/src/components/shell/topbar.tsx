@@ -76,7 +76,7 @@ export function Topbar({ title, actions }: { title: string; actions?: React.Reac
   );
 
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center justify-between bg-background/70 px-6 backdrop-blur-xl [mask-image:linear-gradient(to_bottom,black_85%,transparent)]">
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between bg-background/70 px-6 shadow-[0_8px_24px_-12px_rgba(0,0,0,0.4)] backdrop-blur-xl">
       <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
       <div className="flex items-center gap-2">
         {actions}
