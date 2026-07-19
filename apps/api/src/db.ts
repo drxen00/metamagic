@@ -34,6 +34,16 @@ db.exec(`
     key TEXT PRIMARY KEY,
     value_enc TEXT NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS artwork_sources (
+    rating_key TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    source TEXT NOT NULL,
+    label TEXT NOT NULL,
+    url TEXT,
+    applied_at INTEGER NOT NULL,
+    PRIMARY KEY (rating_key, kind)
+  );
 `);
 
 export interface StoredConnection {
@@ -147,6 +157,53 @@ export function getSessionUserId(tokenHash: string): number | undefined {
 
 export function deleteSession(tokenHash: string): void {
   db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+}
+
+// ---------- Artwork provenance ----------
+
+export interface ArtworkSourceRow {
+  source: string;
+  label: string;
+  url?: string;
+  appliedAt: number;
+}
+
+export function recordArtworkSource(
+  ratingKey: string,
+  kind: "poster" | "art",
+  source: string,
+  label: string,
+  url?: string,
+): void {
+  db.prepare(
+    `INSERT INTO artwork_sources (rating_key, kind, source, label, url, applied_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(rating_key, kind) DO UPDATE SET
+       source = excluded.source,
+       label = excluded.label,
+       url = excluded.url,
+       applied_at = excluded.applied_at`,
+  ).run(ratingKey, kind, source, label, url ?? null, Date.now());
+}
+
+export function getArtworkSources(
+  ratingKey: string,
+): { poster?: ArtworkSourceRow; art?: ArtworkSourceRow } {
+  const rows = db
+    .prepare("SELECT kind, source, label, url, applied_at FROM artwork_sources WHERE rating_key = ?")
+    .all(ratingKey) as { kind: string; source: string; label: string; url: string | null; applied_at: number }[];
+  const result: { poster?: ArtworkSourceRow; art?: ArtworkSourceRow } = {};
+  for (const row of rows) {
+    const entry: ArtworkSourceRow = {
+      source: row.source,
+      label: row.label,
+      url: row.url ?? undefined,
+      appliedAt: row.applied_at,
+    };
+    if (row.kind === "poster") result.poster = entry;
+    else if (row.kind === "art") result.art = entry;
+  }
+  return result;
 }
 
 // ---------- Encrypted app settings (API keys etc.) ----------

@@ -19,6 +19,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddToCollectionDialog } from "./add-to-collection-dialog";
 import { PosterPicker } from "./poster-picker";
+import { ProvenanceNote } from "./provenance-note";
 
 interface ItemDrawerProps {
   ratingKey: string | null;
@@ -221,6 +222,8 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
               )}
               {editError && <p className="text-xs text-destructive">{editError}</p>}
             </div>
+
+            {ratingKey && <ProvenanceNote ratingKey={ratingKey} />}
 
             {editing ? (
               <div className="space-y-1.5">

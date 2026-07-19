@@ -3,6 +3,14 @@ import type { MediuxMatch } from "@metamagic/shared";
 import type { PlexClient } from "./plex.js";
 import { EDIT_TYPE_IDS } from "./plex.js";
 import { fetchRemoteImage } from "./remote-image.js";
+import { recordArtworkSource } from "./db.js";
+
+/** MediUX "Copy YAML" embeds the set link in a comment — pull it out for provenance. */
+export function extractSetUrl(yamlText: string): { url?: string; label: string } {
+  const m = yamlText.match(/https?:\/\/(?:www\.)?mediux\.pro\/sets\/(\d+)/i);
+  if (m) return { url: `https://mediux.pro/sets/${m[1]}`, label: `MediUX set ${m[1]}` };
+  return { label: "MediUX YAML" };
+}
 
 export class MediuxError extends Error {
   status = 400;
@@ -251,6 +259,7 @@ export async function previewMediux(client: PlexClient, yamlText: string): Promi
 export async function applyMediux(client: PlexClient, yamlText: string): Promise<MediuxMatch[]> {
   const set = parseMediuxYaml(yamlText);
   const index = await indexByIds(client);
+  const origin = extractSetUrl(yamlText);
   const results: MediuxMatch[] = [];
 
   for (const c of set.collections) {
@@ -272,9 +281,11 @@ export async function applyMediux(client: PlexClient, yamlText: string): Promise
         const typeId = EDIT_TYPE_IDS.collection;
         if (c.urlPoster) {
           await applyImage(client, hit.ratingKey, "poster", c.urlPoster, hit.sectionId, typeId);
+          recordArtworkSource(hit.ratingKey, "poster", "mediux", origin.label, origin.url);
         }
         if (c.urlBackground) {
           await applyImage(client, hit.ratingKey, "art", c.urlBackground, hit.sectionId, typeId);
+          recordArtworkSource(hit.ratingKey, "art", "mediux", origin.label, origin.url);
         }
         result.applied = true;
       } catch (err) {
@@ -313,9 +324,11 @@ export async function applyMediux(client: PlexClient, yamlText: string): Promise
     try {
       if (e.urlPoster) {
         await applyImage(client, hit.ratingKey, "poster", e.urlPoster, hit.sectionId, typeId);
+        recordArtworkSource(hit.ratingKey, "poster", "mediux", origin.label, origin.url);
       }
       if (e.urlBackground) {
         await applyImage(client, hit.ratingKey, "art", e.urlBackground, hit.sectionId, typeId);
+        recordArtworkSource(hit.ratingKey, "art", "mediux", origin.label, origin.url);
       }
       result.applied = true;
     } catch (err) {

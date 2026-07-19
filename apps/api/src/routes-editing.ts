@@ -6,10 +6,21 @@ import {
   integrationsSchema,
   mediuxImportSchema,
 } from "@metamagic/shared";
-import type { ArtworkLinks, ArtworkOption, IntegrationsStatus } from "@metamagic/shared";
+import type {
+  ArtworkLinks,
+  ArtworkOption,
+  ArtworkProvenance,
+  IntegrationsStatus,
+  MediaItem,
+} from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
 import { EDIT_TYPE_IDS, PlexError } from "./plex.js";
-import { getAppSetting, setAppSetting } from "./db.js";
+import {
+  getAppSetting,
+  getArtworkSources,
+  recordArtworkSource,
+  setAppSetting,
+} from "./db.js";
 import { searchTmdbCollection, tmdbArtwork, validateTmdbKey } from "./tmdb.js";
 import { applyMediux, previewMediux } from "./mediux.js";
 import { fetchRemoteImage } from "./remote-image.js";
@@ -23,6 +34,35 @@ function editTypeId(itemType: string): number {
 /** "Fast & Furious Collection" → "Fast & Furious" for external searches. */
 function cleanCollectionTitle(title: string): string {
   return title.replace(/\s+collection\s*$/i, "").trim() || title;
+}
+
+/** Classify an applied artwork URL into a provenance entry. */
+function classifyArtworkUrl(
+  rawUrl: string,
+  item: MediaItem,
+): { source: string; label: string; url?: string } {
+  const tpdbPage = rawUrl.match(/^https?:\/\/(?:www\.)?theposterdb\.com\/poster\/(\d+)/i);
+  if (tpdbPage) {
+    return { source: "tpdb", label: "ThePosterDB", url: `https://theposterdb.com/poster/${tpdbPage[1]}` };
+  }
+  const tpdbAsset = rawUrl.match(/^https?:\/\/(?:www\.)?theposterdb\.com\/api\/assets\/(\d+)/i);
+  if (tpdbAsset) {
+    return { source: "tpdb", label: "ThePosterDB", url: `https://theposterdb.com/poster/${tpdbAsset[1]}` };
+  }
+  if (/^https?:\/\/image\.tmdb\.org\//i.test(rawUrl)) {
+    const url = item.tmdbId
+      ? `https://www.themoviedb.org/${item.type === "show" ? "tv" : "movie"}/${item.tmdbId}/images/posters`
+      : undefined;
+    return { source: "tmdb", label: "TMDb", url };
+  }
+  if (/^https?:\/\/api\.mediux\.pro\//i.test(rawUrl)) {
+    return { source: "mediux", label: "MediUX", url: undefined };
+  }
+  try {
+    return { source: "url", label: new URL(rawUrl).hostname, url: rawUrl };
+  } catch {
+    return { source: "url", label: "External URL" };
+  }
 }
 
 export function registerEditingRoutes(app: FastifyInstance): void {
@@ -122,14 +162,26 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     },
   );
 
+  // Where the current artwork came from (recorded on every apply)
+  app.get<{ Params: { ratingKey: string } }>(
+    "/api/items/:ratingKey/provenance",
+    async (req): Promise<ArtworkProvenance> => getArtworkSources(req.params.ratingKey),
+  );
+
   // External artwork pages for this item (link-outs in the poster picker)
   app.get<{ Params: { ratingKey: string } }>(
     "/api/items/:ratingKey/links",
     async (req): Promise<ArtworkLinks> => {
       const client = requirePlex();
       const item = await client.item(req.params.ratingKey);
+      // TPDb search is text-only (no id lookup), but its posters are named
+      // "Title (Year)" — searching that exact form surfaces the right title.
       const cleaned =
-        item.type === "collection" ? cleanCollectionTitle(item.title) : item.title;
+        item.type === "collection"
+          ? cleanCollectionTitle(item.title)
+          : item.year
+            ? `${item.title} (${item.year})`
+            : item.title;
       const links: ArtworkLinks = {
         tpdbUrl: `https://theposterdb.com/search?term=${encodeURIComponent(cleaned)}`,
       };
@@ -154,8 +206,11 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       // having Plex fetch the URL (hotlink protection, HTML pages, redirects).
       const image = await fetchRemoteImage(input.url);
       await client.uploadArtwork(req.params.ratingKey, input.kind, image.buffer, image.contentType);
+      const origin = classifyArtworkUrl(input.url, item);
+      recordArtworkSource(req.params.ratingKey, input.kind, origin.source, origin.label, origin.url);
     } else {
       await client.setArtwork(req.params.ratingKey, input.kind, input.url);
+      recordArtworkSource(req.params.ratingKey, input.kind, "plex", "Plex artwork");
     }
     if (item.librarySectionId) {
       await client.lockArtwork(
@@ -184,6 +239,7 @@ export function registerEditingRoutes(app: FastifyInstance): void {
         body,
         req.headers["content-type"] ?? "image/jpeg",
       );
+      recordArtworkSource(req.params.ratingKey, kind, "upload", "Uploaded file");
       if (item.librarySectionId) {
         await client.lockArtwork(
           item.librarySectionId,

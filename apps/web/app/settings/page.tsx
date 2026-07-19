@@ -308,6 +308,7 @@ function MediuxImportCard() {
       if (which === "apply") {
         qc.invalidateQueries({ queryKey: ["items"] });
         qc.invalidateQueries({ queryKey: ["collections"] });
+        qc.invalidateQueries({ queryKey: ["provenance"] });
       }
     },
     onError: (e) => setError((e as Error).message),

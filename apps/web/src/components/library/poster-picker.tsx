@@ -49,6 +49,7 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
   });
 
   const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["provenance", ratingKey] });
     qc.invalidateQueries({ queryKey: ["artwork", ratingKey] });
     qc.invalidateQueries({ queryKey: ["item", ratingKey] });
     qc.invalidateQueries({ queryKey: ["items"] });

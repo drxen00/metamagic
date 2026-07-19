@@ -151,7 +151,6 @@ export type EditItemInput = z.infer<typeof editItemSchema>;
 // ---------- Artwork ----------
 
 export type ArtworkKind = "poster" | "art";
-export type ArtworkSource = "plex" | "tmdb";
 
 export interface ArtworkOption {
   /** Value to POST back to apply this artwork (plex poster ratingKey or remote URL) */
@@ -214,6 +213,22 @@ export interface MediuxMatch {
   appliedSeasons?: number;
   appliedEpisodes?: number;
   error?: string;
+}
+
+// ---------- Artwork provenance ----------
+
+export interface ArtworkSource {
+  source: "tpdb" | "mediux" | "tmdb" | "plex" | "upload" | "url" | string;
+  /** Human-readable origin, e.g. "ThePosterDB" or "MediUX set 7028" */
+  label: string;
+  /** Page to revisit the origin, when known */
+  url?: string;
+  appliedAt: number;
+}
+
+export interface ArtworkProvenance {
+  poster?: ArtworkSource;
+  art?: ArtworkSource;
 }
 
 // ---------- External artwork links ----------

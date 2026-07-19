@@ -23,6 +23,7 @@ import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ItemDrawer } from "@/components/library/item-drawer";
 import { PosterPicker } from "@/components/library/poster-picker";
+import { ProvenanceNote } from "@/components/library/provenance-note";
 
 export default function CollectionsPage() {
   const qc = useQueryClient();
@@ -330,6 +331,8 @@ export default function CollectionsPage() {
                 </div>
               </div>
             </div>
+
+            <ProvenanceNote ratingKey={open.ratingKey} />
 
             {editing ? (
               <div className="space-y-1.5">
