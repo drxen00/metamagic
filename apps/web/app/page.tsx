@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { Clapperboard, Plug, Server, SquareStack, Tv } from "lucide-react";
+import { Clapperboard, Plug, SquareStack, Tv } from "lucide-react";
 import type { DashboardData } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { Topbar } from "@/components/shell/topbar";
@@ -42,13 +42,7 @@ export default function DashboardPage() {
         ) : (
           <>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <StatCard
-                icon={<Server className="h-5 w-5 text-primary" />}
-                label="Server"
-                value={data.server?.name ?? "Plex"}
-                sub={data.server?.version}
-              />
-              {data.sections.slice(0, 2).map((s) => (
+              {data.sections.map((s) => (
                 <StatCard
                   key={s.id}
                   icon={

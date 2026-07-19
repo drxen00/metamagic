@@ -45,6 +45,7 @@ interface PlexMetadata {
   viewCount?: number;
   childCount?: number;
   index?: number;
+  parentRatingKey?: string;
   selected?: boolean;
   provider?: string;
   librarySectionID?: number | string;
@@ -393,6 +394,7 @@ function toMediaItem(m: PlexMetadata): MediaItem {
     addedAt: m.addedAt,
     viewCount: m.viewCount,
     index: m.index,
+    parentRatingKey: m.parentRatingKey,
     videoResolution: m.Media?.[0]?.videoResolution,
     genres: m.Genre?.map((g) => g.tag),
     collections: m.Collection?.map((c) => ({

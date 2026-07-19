@@ -2,13 +2,29 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ExternalLink, ImageIcon, Link2, Upload } from "lucide-react";
-import type { ArtworkKind, ArtworkLinks, ArtworkOption, IntegrationsStatus } from "@metamagic/shared";
+import {
+  Check,
+  CheckCircle2,
+  ExternalLink,
+  ImageIcon,
+  Link2,
+  Loader2,
+  Upload,
+  XCircle,
+} from "lucide-react";
+import type {
+  ArtworkKind,
+  ArtworkLinks,
+  ArtworkOption,
+  IntegrationsStatus,
+  JobStatus,
+  TpdbSetResult,
+} from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface PosterPickerProps {
@@ -17,16 +33,32 @@ interface PosterPickerProps {
   ratingKey: string;
   itemTitle: string;
   kind: ArtworkKind;
+  /** Plex item type ("movie" | "show" | "season" | "collection"…) */
+  itemType?: string;
 }
 
 type Tab = "plex" | "tmdb" | "url";
 
-export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: PosterPickerProps) {
+const TPDB_SET_RE = /^https?:\/\/(?:www\.)?theposterdb\.com\/set\/\d+/i;
+
+export function PosterPicker({
+  open,
+  onClose,
+  ratingKey,
+  itemTitle,
+  kind,
+  itemType,
+}: PosterPickerProps) {
   const qc = useQueryClient();
   const [tab, setTab] = React.useState<Tab>("plex");
   const [url, setUrl] = React.useState("");
+  const [sourceUrl, setSourceUrl] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
+  const [setJobId, setSetJobId] = React.useState<string | null>(null);
   const fileRef = React.useRef<HTMLInputElement>(null);
+
+  const isCollection = itemType === "collection";
+  const isSetUrl = TPDB_SET_RE.test(url.trim());
 
   const { data: integrations } = useQuery({
     queryKey: ["integrations"],
@@ -48,25 +80,53 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
     retry: false,
   });
 
-  const invalidate = () => {
-    qc.invalidateQueries({ queryKey: ["provenance", ratingKey] });
+  const { data: setJob } = useQuery({
+    queryKey: ["job", setJobId],
+    queryFn: () => api<JobStatus<TpdbSetResult>>(`/api/jobs/${setJobId}`),
+    enabled: !!setJobId,
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 1200 : false),
+  });
+
+  const invalidate = React.useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["provenance"] });
     qc.invalidateQueries({ queryKey: ["artwork", ratingKey] });
+    qc.invalidateQueries({ queryKey: ["children"] });
     qc.invalidateQueries({ queryKey: ["item", ratingKey] });
     qc.invalidateQueries({ queryKey: ["items"] });
     qc.invalidateQueries({ queryKey: ["collections"] });
     qc.invalidateQueries({ queryKey: ["collection-children"] });
-  };
+  }, [qc, ratingKey]);
+
+  const jobFinished = setJob?.status === "done" || setJob?.status === "error";
+  React.useEffect(() => {
+    if (jobFinished) invalidate();
+  }, [jobFinished, invalidate]);
 
   const apply = useMutation({
     mutationFn: (applyUrl: string) =>
       api(`/api/items/${ratingKey}/artwork`, {
         method: "POST",
-        body: JSON.stringify({ kind, url: applyUrl }),
+        body: JSON.stringify({
+          kind,
+          url: applyUrl,
+          ...(sourceUrl.trim() ? { sourceUrl: sourceUrl.trim() } : {}),
+        }),
       }),
     onSuccess: () => {
       invalidate();
       onClose();
     },
+    onError: (e) => setError((e as Error).message),
+    onMutate: () => setError(null),
+  });
+
+  const applySet = useMutation({
+    mutationFn: () =>
+      api<{ jobId: string }>(`/api/collections/${ratingKey}/tpdb-set`, {
+        method: "POST",
+        body: JSON.stringify({ url: url.trim() }),
+      }),
+    onSuccess: (data) => setSetJobId(data.jobId),
     onError: (e) => setError((e as Error).message),
     onMutate: () => setError(null),
   });
@@ -100,7 +160,7 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
       open={open}
       onClose={onClose}
       title={`Change ${label} — ${itemTitle}`}
-      className="max-w-6xl w-[94vw]"
+      className="w-[96vw] max-w-[1500px]"
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -147,17 +207,17 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
         </div>
 
         {tab !== "url" ? (
-          <div className="max-h-[68vh] min-h-[40vh] overflow-y-auto pr-1">
+          <div className="max-h-[74vh] min-h-[40vh] overflow-y-auto pr-1">
             {isLoading ? (
               <div
                 className={cn(
-                  "grid gap-3",
+                  "grid gap-4",
                   kind === "poster"
-                    ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"
-                    : "grid-cols-2 md:grid-cols-3",
+                    ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                    : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3",
                 )}
               >
-                {Array.from({ length: 14 }).map((_, i) => (
+                {Array.from({ length: 10 }).map((_, i) => (
                   <Skeleton
                     key={i}
                     className={kind === "poster" ? "aspect-[2/3]" : "aspect-video"}
@@ -180,10 +240,10 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
             ) : options && options.length > 0 ? (
               <div
                 className={cn(
-                  "grid gap-3",
+                  "grid gap-4",
                   kind === "poster"
-                    ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"
-                    : "grid-cols-2 md:grid-cols-3",
+                    ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5"
+                    : "grid-cols-1 md:grid-cols-2 xl:grid-cols-3",
                 )}
               >
                 {options.map((o, i) => (
@@ -226,27 +286,91 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
             )}
           </div>
         ) : (
-          <div className="space-y-4 py-2">
+          <div className="mx-auto max-w-2xl space-y-4 py-2">
             <p className="text-sm text-muted-foreground">
-              Paste an image link — ThePosterDB poster pages (e.g.{" "}
-              <code className="text-xs">theposterdb.com/poster/12345</code>) are converted to the
-              image automatically; MediUX asset links and any direct image URL work too.
+              {isCollection
+                ? "Paste an image link — or a whole ThePosterDB set link (theposterdb.com/set/…) to apply matching posters to every movie in this collection plus the collection poster."
+                : "Paste an image link — ThePosterDB poster pages are converted automatically; MediUX asset links and any direct image URL work too."}
             </p>
             <div className="flex gap-2">
               <Input
-                placeholder="https://…"
+                placeholder={isCollection ? "https://theposterdb.com/set/… or image link" : "https://…"}
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && url && apply.mutate(url)}
+                onKeyDown={(e) => {
+                  if (e.key !== "Enter" || !url) return;
+                  if (isCollection && isSetUrl) applySet.mutate();
+                  else apply.mutate(url);
+                }}
               />
               <Button
-                onClick={() => apply.mutate(url)}
-                disabled={!/^https?:\/\//.test(url)}
-                loading={apply.isPending}
+                onClick={() => (isCollection && isSetUrl ? applySet.mutate() : apply.mutate(url))}
+                disabled={!/^https?:\/\//.test(url) || applySet.isPending || !!setJobId}
+                loading={apply.isPending || applySet.isPending}
               >
-                <Link2 className="h-4 w-4" /> Apply
+                <Link2 className="h-4 w-4" /> {isCollection && isSetUrl ? "Import set" : "Apply"}
               </Button>
             </div>
+
+            {!isSetUrl && (
+              <div className="space-y-1.5">
+                <Label htmlFor="source-url" className="text-xs text-muted-foreground">
+                  Where's it from? Optional page link, saved as this artwork's source (e.g. the
+                  MediUX set or TPDb page)
+                </Label>
+                <Input
+                  id="source-url"
+                  placeholder="https://mediux.pro/sets/…  (optional)"
+                  value={sourceUrl}
+                  onChange={(e) => setSourceUrl(e.target.value)}
+                />
+              </div>
+            )}
+
+            {setJob && (
+              <div className="space-y-2 rounded-md border border-border/60 bg-secondary/30 p-3">
+                <p className="flex items-center gap-2 text-sm font-medium">
+                  {setJob.status === "running" ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      {setJob.current ?? "Working…"}
+                    </>
+                  ) : setJob.status === "error" ? (
+                    <>
+                      <XCircle className="h-4 w-4 text-destructive" /> {setJob.error}
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 className="h-4 w-4 text-success" /> Applied{" "}
+                      {setJob.results.filter((r) => r.status === "applied").length} of{" "}
+                      {setJob.results.length} posters
+                    </>
+                  )}
+                </p>
+                <div className="max-h-52 space-y-1 overflow-y-auto pr-1">
+                  {setJob.results.map((r, i) => (
+                    <div key={`${r.title}-${i}`} className="flex items-center gap-2 text-sm">
+                      <span className="flex-1 truncate">{r.title}</span>
+                      {r.status === "applied" ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 shrink-0 text-success" />
+                      ) : r.status === "no-match" ? (
+                        <span className="text-xs text-muted-foreground">not in collection</span>
+                      ) : (
+                        <span className="max-w-48 truncate text-xs text-destructive" title={r.error}>
+                          {r.error ?? "failed"}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                {setJob.status !== "running" && (
+                  <Button size="sm" variant="outline" onClick={() => setSetJobId(null)}>
+                    Import another
+                  </Button>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center gap-3">
               <div className="h-px flex-1 bg-border" />
               <span className="text-xs uppercase tracking-wide text-muted-foreground">or</span>

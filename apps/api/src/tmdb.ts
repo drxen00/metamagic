@@ -65,6 +65,26 @@ export async function tmdbArtwork(
     }));
 }
 
+/** Season posters (TMDb has no season backdrops). */
+export async function tmdbSeasonArtwork(
+  tmdbShowId: string,
+  seasonNumber: number,
+  kind: "poster" | "art",
+): Promise<ArtworkOption[]> {
+  if (kind === "art") return [];
+  const data = await tmdbFetch<TmdbImages>(
+    `/tv/${tmdbShowId}/season/${seasonNumber}/images?include_image_language=en,null`,
+  );
+  return (data.posters ?? [])
+    .sort((a, b) => b.vote_average - a.vote_average)
+    .slice(0, 40)
+    .map((img) => ({
+      applyUrl: `${IMG_FULL}${img.file_path}`,
+      previewUrl: `${IMG_PREVIEW}${img.file_path}`,
+      provider: img.iso_639_1 ? `tmdb · ${img.iso_639_1}` : "tmdb · textless",
+    }));
+}
+
 interface TmdbCollectionSearch {
   results?: { id: number; name: string }[];
 }

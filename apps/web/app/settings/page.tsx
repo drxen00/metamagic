@@ -2,10 +2,11 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Server, Unplug, XCircle } from "lucide-react";
+import { CheckCircle2, Loader2, Server, Unplug, XCircle } from "lucide-react";
 import type {
   ConnectionStatus,
   IntegrationsStatus,
+  JobStatus,
   LibrarySection,
   MediuxMatch,
   PlexServerInfo,
@@ -291,29 +292,58 @@ function IntegrationsCard() {
 function MediuxImportCard() {
   const qc = useQueryClient();
   const [yamlText, setYamlText] = React.useState("");
-  const [results, setResults] = React.useState<MediuxMatch[] | null>(null);
+  const [previewResults, setPreviewResults] = React.useState<MediuxMatch[] | null>(null);
   const [mode, setMode] = React.useState<"preview" | "apply" | null>(null);
   const [error, setError] = React.useState<string | null>(null);
+  const [jobId, setJobId] = React.useState<string | null>(null);
 
-  const run = useMutation({
-    mutationFn: (which: "preview" | "apply") =>
-      api<MediuxMatch[]>(`/api/mediux/${which}`, {
+  const preview = useMutation({
+    mutationFn: () =>
+      api<MediuxMatch[]>("/api/mediux/preview", {
         method: "POST",
         body: JSON.stringify({ yaml: yamlText }),
       }),
-    onSuccess: (data, which) => {
-      setResults(data);
-      setMode(which);
+    onSuccess: (data) => {
+      setPreviewResults(data);
+      setMode("preview");
       setError(null);
-      if (which === "apply") {
-        qc.invalidateQueries({ queryKey: ["items"] });
-        qc.invalidateQueries({ queryKey: ["collections"] });
-        qc.invalidateQueries({ queryKey: ["provenance"] });
-      }
     },
     onError: (e) => setError((e as Error).message),
   });
 
+  const applyStart = useMutation({
+    mutationFn: () =>
+      api<{ jobId: string }>("/api/mediux/apply", {
+        method: "POST",
+        body: JSON.stringify({ yaml: yamlText }),
+      }),
+    onSuccess: (data) => {
+      setJobId(data.jobId);
+      setMode("apply");
+      setError(null);
+    },
+    onError: (e) => setError((e as Error).message),
+  });
+
+  const { data: job } = useQuery({
+    queryKey: ["job", jobId],
+    queryFn: () => api<JobStatus<MediuxMatch>>(`/api/jobs/${jobId}`),
+    enabled: !!jobId,
+    refetchInterval: (query) => (query.state.data?.status === "running" ? 1200 : false),
+  });
+
+  const jobRunning = job?.status === "running";
+  const jobFinished = job?.status === "done" || job?.status === "error";
+  React.useEffect(() => {
+    if (jobFinished) {
+      qc.invalidateQueries({ queryKey: ["items"] });
+      qc.invalidateQueries({ queryKey: ["collections"] });
+      qc.invalidateQueries({ queryKey: ["provenance"] });
+      qc.invalidateQueries({ queryKey: ["children"] });
+    }
+  }, [jobFinished, qc]);
+
+  const results = mode === "apply" ? (job?.results ?? []) : previewResults;
   const matched = results?.filter((r) => r.ratingKey).length ?? 0;
   const applied = results?.filter((r) => r.applied).length ?? 0;
 
@@ -340,8 +370,9 @@ function MediuxImportCard() {
           value={yamlText}
           onChange={(e) => {
             setYamlText(e.target.value);
-            setResults(null);
+            setPreviewResults(null);
             setMode(null);
+            setJobId(null);
           }}
           rows={6}
           placeholder={"metadata:\n  \"603692\":\n    url_poster: https://api.mediux.pro/assets/…"}
@@ -352,12 +383,25 @@ function MediuxImportCard() {
             <XCircle className="h-4 w-4 shrink-0" /> {error}
           </p>
         )}
-        {results && (
+        {results && (mode === "preview" || job) && (
           <div className="space-y-2 rounded-md border border-border bg-secondary/30 p-3">
-            <p className="text-sm font-medium">
-              {mode === "apply"
-                ? `Applied ${applied} of ${results.length} entries`
-                : `${matched} of ${results.length} entries match your libraries`}
+            <p className="flex items-center gap-2 text-sm font-medium">
+              {mode === "apply" ? (
+                jobRunning ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                    {job?.current ?? "Working…"}
+                  </>
+                ) : job?.status === "error" ? (
+                  <>
+                    <XCircle className="h-4 w-4 text-destructive" /> {job.error}
+                  </>
+                ) : (
+                  `Applied ${applied} of ${results.length} entries`
+                )
+              ) : (
+                `${matched} of ${results.length} entries match your libraries`
+              )}
             </p>
             <div className="max-h-56 space-y-1 overflow-y-auto pr-1">
               {results.map((r) => (
@@ -419,16 +463,21 @@ function MediuxImportCard() {
         <div className="flex gap-2">
           <Button
             variant="outline"
-            loading={run.isPending && run.variables === "preview"}
-            disabled={!yamlText.trim() || run.isPending}
-            onClick={() => run.mutate("preview")}
+            loading={preview.isPending}
+            disabled={!yamlText.trim() || preview.isPending || jobRunning}
+            onClick={() => preview.mutate()}
           >
             Preview matches
           </Button>
           <Button
-            loading={run.isPending && run.variables === "apply"}
-            disabled={!yamlText.trim() || run.isPending || (mode === "preview" && matched === 0)}
-            onClick={() => run.mutate("apply")}
+            loading={applyStart.isPending || jobRunning}
+            disabled={
+              !yamlText.trim() ||
+              applyStart.isPending ||
+              jobRunning ||
+              (mode === "preview" && matched === 0)
+            }
+            onClick={() => applyStart.mutate()}
           >
             Apply to library
           </Button>

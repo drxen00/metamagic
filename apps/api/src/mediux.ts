@@ -256,13 +256,26 @@ export async function previewMediux(client: PlexClient, yamlText: string): Promi
   return results;
 }
 
-export async function applyMediux(client: PlexClient, yamlText: string): Promise<MediuxMatch[]> {
+export interface ProgressReporter<T> {
+  setCurrent: (line: string) => void;
+  push: (result: T) => void;
+}
+
+export async function applyMediux(
+  client: PlexClient,
+  yamlText: string,
+  report?: ProgressReporter<MediuxMatch>,
+): Promise<MediuxMatch[]> {
   const set = parseMediuxYaml(yamlText);
+  report?.setCurrent("Scanning your libraries…");
   const index = await indexByIds(client);
   const origin = extractSetUrl(yamlText);
   const results: MediuxMatch[] = [];
+  const total = set.collections.length + set.entries.length;
+  let done = 0;
 
   for (const c of set.collections) {
+    report?.setCurrent(`Applying collection “${c.name}” (${++done}/${total})…`);
     const hit = await findCollection(client, c.name);
     const result: MediuxMatch = {
       id: c.name,
@@ -295,10 +308,14 @@ export async function applyMediux(client: PlexClient, yamlText: string): Promise
       result.error = "No matching collection in Plex";
     }
     results.push(result);
+    report?.push(result);
   }
 
   for (const e of set.entries) {
     const hit = lookup(index, e.id);
+    report?.setCurrent(
+      `Applying ${hit?.title ?? `id ${e.id}`} (${++done}/${total})…`,
+    );
     const result: MediuxMatch = {
       id: e.id,
       kind: "item",
@@ -316,6 +333,7 @@ export async function applyMediux(client: PlexClient, yamlText: string): Promise
     if (!hit) {
       result.error = "Not found in your libraries";
       results.push(result);
+      report?.push(result);
       continue;
     }
 
@@ -393,6 +411,7 @@ export async function applyMediux(client: PlexClient, yamlText: string): Promise
 
     if (failures.length > 0) result.error = failures.slice(0, 4).join("; ");
     results.push(result);
+    report?.push(result);
   }
   return results;
 }

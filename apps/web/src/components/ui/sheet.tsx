@@ -3,6 +3,7 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Portal } from "./portal";
 
 interface SheetProps {
   open: boolean;
@@ -21,12 +22,13 @@ export function Sheet({ open, onClose, children, className }: SheetProps) {
   }, [open, onClose]);
 
   return (
-    <div
-      className={cn(
-        "fixed inset-0 z-[1300] transition-[visibility]",
-        open ? "visible" : "invisible delay-300",
-      )}
-    >
+    <Portal>
+      <div
+        className={cn(
+          "fixed inset-0 z-[1300] transition-[visibility]",
+          open ? "visible" : "invisible delay-300",
+        )}
+      >
       <div
         className={cn(
           "absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300",
@@ -52,6 +54,7 @@ export function Sheet({ open, onClose, children, className }: SheetProps) {
         </button>
         {open && children}
       </div>
-    </div>
+      </div>
+    </Portal>
   );
 }

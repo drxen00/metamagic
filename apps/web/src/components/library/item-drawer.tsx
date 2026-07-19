@@ -32,6 +32,7 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
   const [addOpen, setAddOpen] = React.useState(false);
   const [editing, setEditing] = React.useState(false);
   const [pickerKind, setPickerKind] = React.useState<ArtworkKind | null>(null);
+  const [seasonPicker, setSeasonPicker] = React.useState<MediaItem | null>(null);
   const [title, setTitle] = React.useState("");
   const [summary, setSummary] = React.useState("");
   const [editError, setEditError] = React.useState<string | null>(null);
@@ -53,7 +54,14 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
   React.useEffect(() => {
     setEditing(false);
     setEditError(null);
+    setSeasonPicker(null);
   }, [ratingKey]);
+
+  const { data: seasons } = useQuery({
+    queryKey: ["children", ratingKey],
+    queryFn: () => api<MediaItem[]>(`/api/items/${ratingKey}/children`),
+    enabled: !!ratingKey && item?.type === "show",
+  });
 
   const invalidateItem = () => {
     qc.invalidateQueries({ queryKey: ["item", ratingKey] });
@@ -261,6 +269,44 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
               busy={edit.isPending}
             />
 
+            {item.type === "show" && seasons && seasons.length > 0 && (
+              <div className="space-y-2 pt-2">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+                  Season posters
+                </h3>
+                <div className="flex gap-3 overflow-x-auto pb-2">
+                  {seasons.map((season) => (
+                    <button
+                      key={season.ratingKey}
+                      onClick={() => setSeasonPicker(season)}
+                      className="group/season w-20 shrink-0 text-left"
+                      title={`Change poster — ${season.title}`}
+                    >
+                      <div className="relative aspect-[2/3] overflow-hidden rounded-md border border-border/60 bg-secondary/40 transition-all group-hover/season:border-primary/60 group-hover/season:shadow-primary-glow">
+                        {season.thumb ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={imageUrl(season.thumb, 120, 180)}
+                            alt=""
+                            loading="lazy"
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <span className="flex h-full items-center justify-center">
+                            <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                          </span>
+                        )}
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-[10px] font-medium text-white opacity-0 transition-opacity group-hover/season:opacity-100">
+                          Change
+                        </span>
+                      </div>
+                      <p className="mt-1 truncate text-xs text-muted-foreground">{season.title}</p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             <div className="space-y-2 pt-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -315,6 +361,17 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
                   ratingKey={ratingKey}
                   itemTitle={item.title}
                   kind={pickerKind}
+                  itemType={item.type}
+                />
+              )}
+              {seasonPicker && (
+                <PosterPicker
+                  open
+                  onClose={() => setSeasonPicker(null)}
+                  ratingKey={seasonPicker.ratingKey}
+                  itemTitle={`${item.title} — ${seasonPicker.title}`}
+                  kind="poster"
+                  itemType="season"
                 />
               )}
             </>

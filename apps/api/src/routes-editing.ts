@@ -5,6 +5,7 @@ import {
   editItemSchema,
   integrationsSchema,
   mediuxImportSchema,
+  tpdbSetSchema,
 } from "@metamagic/shared";
 import type {
   ArtworkLinks,
@@ -21,9 +22,16 @@ import {
   recordArtworkSource,
   setAppSetting,
 } from "./db.js";
-import { searchTmdbCollection, tmdbArtwork, validateTmdbKey } from "./tmdb.js";
+import {
+  searchTmdbCollection,
+  tmdbArtwork,
+  tmdbSeasonArtwork,
+  validateTmdbKey,
+} from "./tmdb.js";
 import { applyMediux, previewMediux } from "./mediux.js";
 import { fetchRemoteImage } from "./remote-image.js";
+import { startJob, getJob } from "./jobs.js";
+import { applyTpdbSetToCollection } from "./tpdb.js";
 
 function editTypeId(itemType: string): number {
   const id = EDIT_TYPE_IDS[itemType];
@@ -34,6 +42,29 @@ function editTypeId(itemType: string): number {
 /** "Fast & Furious Collection" → "Fast & Furious" for external searches. */
 function cleanCollectionTitle(title: string): string {
   return title.replace(/\s+collection\s*$/i, "").trim() || title;
+}
+
+/** Classify a user-supplied "where's it from" page link into a provenance entry. */
+function classifySourcePage(pageUrl: string): { source: string; label: string; url?: string } {
+  const mediuxSet = pageUrl.match(/^https?:\/\/(?:www\.)?mediux\.pro\/sets\/(\d+)/i);
+  if (mediuxSet) {
+    return {
+      source: "mediux",
+      label: `MediUX set ${mediuxSet[1]}`,
+      url: `https://mediux.pro/sets/${mediuxSet[1]}`,
+    };
+  }
+  if (/^https?:\/\/(?:www\.)?mediux\.pro\//i.test(pageUrl)) {
+    return { source: "mediux", label: "MediUX", url: pageUrl };
+  }
+  if (/^https?:\/\/(?:www\.)?theposterdb\.com\//i.test(pageUrl)) {
+    return { source: "tpdb", label: "ThePosterDB", url: pageUrl };
+  }
+  try {
+    return { source: "url", label: new URL(pageUrl).hostname, url: pageUrl };
+  } catch {
+    return { source: "url", label: "External URL" };
+  }
 }
 
 /** Classify an applied artwork URL into a provenance entry. */
@@ -142,6 +173,16 @@ export function registerEditingRoutes(app: FastifyInstance): void {
 
       if (source === "tmdb") {
         const item = await client.item(req.params.ratingKey);
+        if (item.type === "season") {
+          if (!item.parentRatingKey || item.index === undefined) {
+            throw new PlexError("Could not resolve this season's show.", 404);
+          }
+          const show = await client.item(item.parentRatingKey);
+          if (!show.tmdbId) {
+            throw new PlexError("The parent show has no TMDb id in Plex.", 404);
+          }
+          return tmdbSeasonArtwork(show.tmdbId, item.index, kind);
+        }
         if (item.type === "collection") {
           const collectionId = await searchTmdbCollection(cleanCollectionTitle(item.title));
           if (!collectionId) {
@@ -160,6 +201,11 @@ export function registerEditingRoutes(app: FastifyInstance): void {
 
       throw new PlexError(`Unknown artwork source "${source}"`, 400);
     },
+  );
+
+  // Children of a show (seasons) or season (episodes)
+  app.get<{ Params: { ratingKey: string } }>("/api/items/:ratingKey/children", async (req) =>
+    requirePlex().children(req.params.ratingKey),
   );
 
   // Where the current artwork came from (recorded on every apply)
@@ -206,7 +252,9 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       // having Plex fetch the URL (hotlink protection, HTML pages, redirects).
       const image = await fetchRemoteImage(input.url);
       await client.uploadArtwork(req.params.ratingKey, input.kind, image.buffer, image.contentType);
-      const origin = classifyArtworkUrl(input.url, item);
+      const origin = input.sourceUrl
+        ? classifySourcePage(input.sourceUrl)
+        : classifyArtworkUrl(input.url, item);
       recordArtworkSource(req.params.ratingKey, input.kind, origin.source, origin.label, origin.url);
     } else {
       await client.setArtwork(req.params.ratingKey, input.kind, input.url);
@@ -280,8 +328,37 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     return previewMediux(requirePlex(), input.yaml);
   });
 
+  // Long-running: starts a background job; poll /api/jobs/:id for progress.
   app.post("/api/mediux/apply", async (req) => {
     const input = mediuxImportSchema.parse(req.body);
-    return applyMediux(requirePlex(), input.yaml);
+    const client = requirePlex();
+    const job = startJob("mediux", (report) =>
+      applyMediux(client, input.yaml, report).then(() => undefined),
+    );
+    return { jobId: job.id };
+  });
+
+  // ---------- ThePosterDB set import (collections) ----------
+
+  app.post<{ Params: { ratingKey: string } }>(
+    "/api/collections/:ratingKey/tpdb-set",
+    async (req) => {
+      const input = tpdbSetSchema.parse(req.body);
+      const client = requirePlex();
+      const job = startJob("tpdb-set", (report) =>
+        applyTpdbSetToCollection(client, req.params.ratingKey, input.url, report).then(
+          () => undefined,
+        ),
+      );
+      return { jobId: job.id };
+    },
+  );
+
+  // ---------- Job polling ----------
+
+  app.get<{ Params: { id: string } }>("/api/jobs/:id", async (req, reply) => {
+    const job = getJob(req.params.id);
+    if (!job) return reply.status(404).send({ error: "Job not found (it may have expired)." });
+    return job;
   });
 }

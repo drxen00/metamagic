@@ -50,6 +50,7 @@ export interface MediaItem {
   viewCount?: number;
   /** Season or episode number for children of a show/season */
   index?: number;
+  parentRatingKey?: string;
   videoResolution?: string;
   genres?: string[];
   collections?: { tag: string; id?: string }[];
@@ -164,6 +165,8 @@ export interface ArtworkOption {
 export const applyArtworkSchema = z.object({
   kind: z.enum(["poster", "art"]),
   url: z.string().min(1),
+  /** Optional page URL recorded as the artwork's provenance */
+  sourceUrl: z.string().url().optional(),
 });
 export type ApplyArtworkInput = z.infer<typeof applyArtworkSchema>;
 
@@ -239,6 +242,32 @@ export interface ArtworkLinks {
   /** Direct MediUX page for this exact item, when resolvable */
   mediuxUrl?: string;
 }
+
+// ---------- Background jobs ----------
+
+export interface JobStatus<T = unknown> {
+  id: string;
+  kind: string;
+  status: "running" | "done" | "error";
+  /** Human-readable line for what's happening right now */
+  current?: string;
+  /** Results accumulated so far (full list once status is done) */
+  results: T[];
+  error?: string;
+}
+
+export interface TpdbSetResult {
+  title: string;
+  status: "applied" | "no-match" | "failed";
+  error?: string;
+}
+
+export const tpdbSetSchema = z.object({
+  url: z.string().url().refine((u) => /theposterdb\.com\/set\/\d+/i.test(u), {
+    message: "Paste a ThePosterDB set link (theposterdb.com/set/…)",
+  }),
+});
+export type TpdbSetInput = z.infer<typeof tpdbSetSchema>;
 
 // ---------- API error envelope ----------
 

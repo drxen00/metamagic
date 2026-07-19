@@ -138,7 +138,10 @@ export default function CollectionsPage() {
   };
 
   const childKeys = new Set(children?.map((c) => c.ratingKey) ?? []);
-  const candidates = addCandidates?.items.filter((i) => !childKeys.has(i.ratingKey)) ?? [];
+  const candidates =
+    addCandidates?.items.filter(
+      (i) => !childKeys.has(i.ratingKey) && i.type !== "collection" && i.ratingKey !== openKey,
+    ) ?? [];
 
   return (
     <main>
@@ -458,6 +461,7 @@ export default function CollectionsPage() {
           ratingKey={open.ratingKey}
           itemTitle={open.title}
           kind="poster"
+          itemType="collection"
         />
       )}
 
@@ -656,7 +660,7 @@ function NewCollectionDialog({
         {debounced.length > 1 && (
           <div className="max-h-48 space-y-1 overflow-y-auto pr-1">
             {found?.items
-              .filter((i) => !picked.has(i.ratingKey))
+              .filter((i) => !picked.has(i.ratingKey) && i.type !== "collection")
               .map((i) => (
                 <button
                   key={i.ratingKey}

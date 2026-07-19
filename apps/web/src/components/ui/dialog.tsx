@@ -3,6 +3,7 @@
 import * as React from "react";
 import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Portal } from "./portal";
 
 interface DialogProps {
   open: boolean;
@@ -22,7 +23,8 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
 
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-[1400] flex items-center justify-center p-4">
+    <Portal>
+      <div className="fixed inset-0 z-[1400] flex items-center justify-center p-4">
       <div
         className="animate-fade-in absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
@@ -46,8 +48,9 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
             <X className="h-4 w-4" />
           </button>
         </div>
-        {children}
+          {children}
+        </div>
       </div>
-    </div>
+    </Portal>
   );
 }
