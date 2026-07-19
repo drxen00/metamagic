@@ -99,8 +99,8 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
     <Dialog
       open={open}
       onClose={onClose}
-      title={`Change ${label}`}
-      className="max-w-3xl"
+      title={`Change ${label} — ${itemTitle}`}
+      className="max-w-6xl w-[94vw]"
     >
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
@@ -147,15 +147,17 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
         </div>
 
         {tab !== "url" ? (
-          <div className="max-h-[55vh] overflow-y-auto pr-1">
+          <div className="max-h-[68vh] min-h-[40vh] overflow-y-auto pr-1">
             {isLoading ? (
               <div
                 className={cn(
                   "grid gap-3",
-                  kind === "poster" ? "grid-cols-4" : "grid-cols-2",
+                  kind === "poster"
+                    ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"
+                    : "grid-cols-2 md:grid-cols-3",
                 )}
               >
-                {Array.from({ length: 8 }).map((_, i) => (
+                {Array.from({ length: 14 }).map((_, i) => (
                   <Skeleton
                     key={i}
                     className={kind === "poster" ? "aspect-[2/3]" : "aspect-video"}
@@ -179,7 +181,9 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
               <div
                 className={cn(
                   "grid gap-3",
-                  kind === "poster" ? "grid-cols-4" : "grid-cols-2",
+                  kind === "poster"
+                    ? "grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7"
+                    : "grid-cols-2 md:grid-cols-3",
                 )}
               >
                 {options.map((o, i) => (
@@ -188,7 +192,7 @@ export function PosterPicker({ open, onClose, ratingKey, itemTitle, kind }: Post
                     disabled={apply.isPending}
                     onClick={() => apply.mutate(o.applyUrl)}
                     className={cn(
-                      "group relative overflow-hidden rounded-md border transition-all",
+                      "group relative overflow-hidden rounded-md border transition-all duration-200 ease-out hover:-translate-y-1",
                       kind === "poster" ? "aspect-[2/3]" : "aspect-video",
                       o.selected
                         ? "border-primary ring-2 ring-primary"

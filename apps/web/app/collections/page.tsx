@@ -350,7 +350,7 @@ export default function CollectionsPage() {
             )}
 
             {/* Add items */}
-            <div className="space-y-2 border-t border-border pt-4">
+            <div className="space-y-2 pt-2">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                 Add items
               </h3>

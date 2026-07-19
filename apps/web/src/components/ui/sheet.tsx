@@ -37,8 +37,8 @@ export function Sheet({ open, onClose, children, className }: SheetProps) {
       />
       <div
         className={cn(
-          "absolute inset-y-0 right-0 w-full max-w-lg overflow-y-auto border-l border-border bg-card shadow-xl",
-          "transition-transform duration-300",
+          "absolute inset-y-0 right-0 w-full max-w-lg overflow-y-auto bg-card shadow-[-8px_0_40px_rgba(0,0,0,0.45)]",
+          "transition-transform duration-300 ease-out",
           open ? "translate-x-0" : "translate-x-full",
           className,
         )}

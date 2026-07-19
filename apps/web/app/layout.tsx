@@ -21,6 +21,9 @@ try {
   if (t) document.documentElement.dataset.theme = t;
   var f = localStorage.getItem("metamagic-font");
   if (f) document.documentElement.dataset.font = f;
+  if (localStorage.getItem("metamagic-sidebar") === "collapsed") {
+    document.documentElement.dataset.sidebar = "collapsed";
+  }
 } catch (e) {}
 `;
 
@@ -35,7 +38,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeInit }} />
         <Providers>
           <Sidebar />
-          <div className="pl-60">{children}</div>
+          <div
+            className="transition-[padding-left] duration-300 ease-out"
+            style={{ paddingLeft: "var(--sidebar-w)" }}
+          >
+            {children}
+          </div>
         </Providers>
       </body>
     </html>

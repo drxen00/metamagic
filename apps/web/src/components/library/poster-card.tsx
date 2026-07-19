@@ -15,7 +15,7 @@ interface PosterCardProps {
 export function PosterCard({ item, selected, selectionMode, onClick, onToggleSelect }: PosterCardProps) {
   const src = imageUrl(item.thumb, 300, 450);
   return (
-    <div className="group relative">
+    <div className="group relative transition-transform duration-200 ease-out hover:-translate-y-1">
       <button
         onClick={() => (selectionMode ? onToggleSelect() : onClick())}
         className={cn(

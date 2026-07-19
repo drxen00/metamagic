@@ -99,7 +99,7 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
       : undefined;
 
   return (
-    <Sheet open={!!ratingKey} onClose={onClose}>
+    <Sheet open={!!ratingKey} onClose={onClose} className="max-w-2xl">
       {isLoading || !item ? (
         <div className="space-y-4 p-6">
           <Skeleton className="h-72 w-48" />
@@ -261,7 +261,7 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
               busy={edit.isPending}
             />
 
-            <div className="space-y-2 border-t border-border pt-4">
+            <div className="space-y-2 pt-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                   Collections

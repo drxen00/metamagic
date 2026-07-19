@@ -24,7 +24,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
   return (
     <div className="fixed inset-0 z-[1400] flex items-center justify-center p-4">
       <div
-        className="absolute inset-0 bg-black/70 backdrop-blur-sm"
+        className="animate-fade-in absolute inset-0 bg-black/70 backdrop-blur-sm"
         onClick={onClose}
         aria-hidden
       />
@@ -32,7 +32,7 @@ export function Dialog({ open, onClose, title, children, className }: DialogProp
         role="dialog"
         aria-modal
         className={cn(
-          "relative w-full max-w-md rounded-lg border border-border bg-popover p-6 shadow-xl",
+          "animate-zoom-in relative w-full max-w-md rounded-xl border border-border/50 bg-popover p-6 shadow-2xl",
           className,
         )}
       >
