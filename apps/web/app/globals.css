@@ -175,6 +175,232 @@
     --shadow-primary: 0 10px 40px -10px hsl(320 90% 60% / 0.45);
   }
 
+  /* ---------- Immersive themes (always dark, ported from arr-dashboard, MIT) ---------- */
+
+  [data-theme="cyberpunk"].dark {
+    --primary: 342 100% 58%;
+    --primary-foreground: 0 0% 100%;
+    --accent: 185 95% 46%;
+    --accent-foreground: 0 0% 0%;
+    --background: 280 40% 4%;
+    --foreground: 0 0% 95%;
+    --card: 280 35% 7%;
+    --card-foreground: 0 0% 95%;
+    --popover: 280 35% 9%;
+    --popover-foreground: 0 0% 95%;
+    --secondary: 280 30% 11%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 280 20% 14%;
+    --muted-foreground: 280 10% 60%;
+    --border: 342 50% 25%;
+    --input: 280 30% 8%;
+    --ring: 342 100% 58%;
+    --sidebar: 280 50% 2%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 342 100% 58%;
+    --sidebar-accent: 280 35% 10%;
+    --sidebar-accent-foreground: 342 100% 65%;
+    --sidebar-border: 342 40% 18%;
+    --gradient-primary: linear-gradient(135deg, #ff2a6d 0%, #05d9e8 100%);
+    --shadow-primary: 0 10px 40px -10px hsl(342 100% 58% / 0.6);
+  }
+
+  [data-theme="terminal"].dark {
+    --primary: 120 90% 40%;
+    --primary-foreground: 0 0% 0%;
+    --accent: 120 100% 50%;
+    --accent-foreground: 0 0% 0%;
+    --background: 0 0% 2%;
+    --foreground: 120 100% 50%;
+    --card: 0 0% 4%;
+    --card-foreground: 120 80% 70%;
+    --popover: 0 0% 4%;
+    --popover-foreground: 120 80% 70%;
+    --secondary: 0 0% 8%;
+    --secondary-foreground: 120 70% 60%;
+    --muted: 0 0% 8%;
+    --muted-foreground: 120 40% 50%;
+    --border: 120 50% 15%;
+    --input: 0 0% 8%;
+    --ring: 120 90% 40%;
+    --sidebar: 0 0% 2%;
+    --sidebar-foreground: 120 100% 50%;
+    --sidebar-primary: 120 90% 40%;
+    --sidebar-accent: 0 0% 8%;
+    --sidebar-accent-foreground: 120 80% 70%;
+    --sidebar-border: 120 50% 15%;
+    --gradient-primary: linear-gradient(135deg, hsl(120 90% 40%) 0%, hsl(120 100% 50%) 100%);
+    --shadow-primary: 0 10px 40px -10px hsl(120 90% 40% / 0.6);
+  }
+
+  [data-theme="vaporwave"].dark {
+    --primary: 320 100% 70%;
+    --primary-foreground: 0 0% 0%;
+    --accent: 180 100% 50%;
+    --accent-foreground: 0 0% 0%;
+    --background: 260 60% 8%;
+    --foreground: 0 0% 95%;
+    --card: 260 50% 12%;
+    --card-foreground: 0 0% 95%;
+    --popover: 260 50% 12%;
+    --popover-foreground: 0 0% 95%;
+    --secondary: 260 40% 18%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 260 40% 18%;
+    --muted-foreground: 0 0% 65%;
+    --border: 280 40% 25%;
+    --input: 260 40% 18%;
+    --ring: 320 100% 70%;
+    --sidebar: 260 60% 6%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 320 100% 70%;
+    --sidebar-accent: 260 40% 18%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 280 40% 25%;
+    --gradient-primary: linear-gradient(135deg, hsl(320 100% 70%) 0%, hsl(180 100% 50%) 100%);
+    --shadow-primary: 0 10px 40px -10px hsl(320 100% 70% / 0.5);
+  }
+
+  [data-theme="cyber"].dark {
+    --primary: 195 100% 50%;
+    --primary-foreground: 0 0% 0%;
+    --accent: 300 100% 50%;
+    --accent-foreground: 0 0% 0%;
+    --background: 220 30% 6%;
+    --foreground: 0 0% 95%;
+    --card: 220 25% 10%;
+    --card-foreground: 0 0% 95%;
+    --popover: 220 25% 10%;
+    --popover-foreground: 0 0% 95%;
+    --secondary: 220 20% 15%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 220 20% 15%;
+    --muted-foreground: 0 0% 65%;
+    --border: 220 30% 20%;
+    --input: 220 20% 15%;
+    --ring: 195 100% 50%;
+    --sidebar: 220 30% 5%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 195 100% 50%;
+    --sidebar-accent: 220 20% 15%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 220 30% 20%;
+    --gradient-primary: linear-gradient(135deg, hsl(195 100% 50%) 0%, hsl(300 100% 50%) 100%);
+    --shadow-primary: 0 10px 40px -10px hsl(195 100% 50% / 0.6);
+  }
+
+  [data-theme="noir"].dark {
+    --primary: 45 60% 55%;
+    --primary-foreground: 0 0% 5%;
+    --accent: 40 30% 75%;
+    --accent-foreground: 0 0% 5%;
+    --background: 30 10% 3%;
+    --foreground: 40 20% 90%;
+    --card: 30 8% 7%;
+    --card-foreground: 40 20% 90%;
+    --popover: 30 8% 7%;
+    --popover-foreground: 40 20% 90%;
+    --secondary: 30 6% 12%;
+    --secondary-foreground: 40 20% 90%;
+    --muted: 30 6% 12%;
+    --muted-foreground: 40 15% 55%;
+    --border: 40 10% 18%;
+    --input: 30 6% 12%;
+    --ring: 45 60% 55%;
+    --sidebar: 30 10% 2%;
+    --sidebar-foreground: 40 20% 90%;
+    --sidebar-primary: 45 60% 55%;
+    --sidebar-accent: 30 6% 12%;
+    --sidebar-accent-foreground: 40 20% 90%;
+    --sidebar-border: 40 10% 18%;
+    --gradient-primary: linear-gradient(135deg, hsl(45 60% 55%) 0%, hsl(40 30% 75%) 100%);
+    --shadow-primary: 0 10px 40px -10px hsl(45 60% 55% / 0.4);
+  }
+
+  [data-theme="vhs"].dark {
+    --primary: 200 15% 75%;
+    --primary-foreground: 0 0% 5%;
+    --accent: 0 80% 55%;
+    --accent-foreground: 0 0% 100%;
+    --background: 220 10% 8%;
+    --foreground: 200 20% 92%;
+    --card: 220 8% 12%;
+    --card-foreground: 200 20% 92%;
+    --popover: 220 8% 12%;
+    --popover-foreground: 200 20% 92%;
+    --secondary: 220 6% 16%;
+    --secondary-foreground: 200 20% 92%;
+    --muted: 220 6% 16%;
+    --muted-foreground: 200 10% 55%;
+    --border: 220 8% 22%;
+    --input: 220 6% 16%;
+    --ring: 200 15% 75%;
+    --sidebar: 220 10% 6%;
+    --sidebar-foreground: 200 20% 92%;
+    --sidebar-primary: 200 15% 75%;
+    --sidebar-accent: 220 6% 16%;
+    --sidebar-accent-foreground: 200 20% 92%;
+    --sidebar-border: 220 8% 22%;
+    --gradient-primary: linear-gradient(135deg, hsl(200 15% 75%) 0%, hsl(0 80% 55%) 100%);
+    --shadow-primary: 0 10px 40px -10px hsl(200 15% 75% / 0.4);
+  }
+
+  [data-theme="winamp"].dark {
+    --primary: 120 100% 50%;
+    --primary-foreground: 0 0% 0%;
+    --accent: 120 100% 60%;
+    --accent-foreground: 0 0% 0%;
+    --background: 220 13% 10%;
+    --foreground: 0 0% 95%;
+    --card: 220 13% 13%;
+    --card-foreground: 0 0% 95%;
+    --popover: 220 13% 13%;
+    --popover-foreground: 0 0% 95%;
+    --secondary: 220 10% 18%;
+    --secondary-foreground: 0 0% 95%;
+    --muted: 220 10% 18%;
+    --muted-foreground: 0 0% 65%;
+    --border: 220 10% 20%;
+    --input: 220 10% 18%;
+    --ring: 120 100% 50%;
+    --sidebar: 220 13% 8%;
+    --sidebar-foreground: 0 0% 95%;
+    --sidebar-primary: 120 100% 50%;
+    --sidebar-accent: 220 10% 18%;
+    --sidebar-accent-foreground: 0 0% 95%;
+    --sidebar-border: 220 10% 20%;
+    --gradient-primary: linear-gradient(135deg, hsl(120 100% 50%) 0%, hsl(100 100% 55%) 100%);
+    --shadow-primary: 0 10px 40px -10px hsl(120 100% 50% / 0.6);
+  }
+
+  [data-theme="amber"].dark {
+    --primary: 35 100% 50%;
+    --primary-foreground: 0 0% 0%;
+    --accent: 40 100% 60%;
+    --accent-foreground: 0 0% 0%;
+    --background: 0 0% 0%;
+    --foreground: 35 100% 50%;
+    --card: 35 20% 4%;
+    --card-foreground: 35 100% 50%;
+    --popover: 35 20% 4%;
+    --popover-foreground: 35 100% 50%;
+    --secondary: 35 15% 8%;
+    --secondary-foreground: 35 100% 50%;
+    --muted: 35 15% 8%;
+    --muted-foreground: 35 60% 40%;
+    --border: 35 30% 15%;
+    --input: 35 15% 8%;
+    --ring: 35 100% 50%;
+    --sidebar: 0 0% 0%;
+    --sidebar-foreground: 35 100% 50%;
+    --sidebar-primary: 35 100% 50%;
+    --sidebar-accent: 35 15% 8%;
+    --sidebar-accent-foreground: 35 100% 50%;
+    --sidebar-border: 35 30% 15%;
+    --gradient-primary: linear-gradient(135deg, hsl(35 100% 50%) 0%, hsl(40 100% 60%) 100%);
+    --shadow-primary: 0 10px 40px -10px hsl(35 100% 50% / 0.6);
+  }
+
   [data-theme="midnight"].dark {
     --background: 230 50% 3%;
     --foreground: 230 20% 90%;
@@ -228,6 +454,99 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--primary) / 0.5);
+  }
+}
+
+@layer base {
+  /* Font switching: next/font exposes --font-* variables on <html>;
+     data-font picks which one the app renders with. */
+  body {
+    font-family: var(--app-font, var(--font-inter)), ui-sans-serif, system-ui, sans-serif;
+  }
+  [data-font="grotesk"] {
+    --app-font: var(--font-grotesk);
+  }
+  [data-font="mono"] {
+    --app-font: var(--font-mono);
+  }
+  [data-font="orbitron"] {
+    --app-font: var(--font-orbitron);
+  }
+  [data-font="vt323"] {
+    --app-font: var(--font-vt323);
+  }
+
+  /* ---------- CRT effects for terminal & amber themes (ported from arr-dashboard, MIT) ---------- */
+
+  [data-theme="terminal"] body::after,
+  [data-theme="amber"] body::after {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 50;
+    background: repeating-linear-gradient(
+      0deg,
+      rgba(0, 0, 0, 0.15) 0px,
+      rgba(0, 0, 0, 0.15) 1px,
+      transparent 1px,
+      transparent 2px
+    );
+    animation: scanlines 0.1s linear infinite;
+  }
+
+  @keyframes scanlines {
+    0% {
+      background-position: 0 0;
+    }
+    100% {
+      background-position: 0 4px;
+    }
+  }
+
+  [data-theme="terminal"] body::before,
+  [data-theme="amber"] body::before {
+    content: "";
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 49;
+    background: radial-gradient(
+      ellipse at center,
+      transparent 0%,
+      rgba(0, 0, 0, 0.3) 90%,
+      rgba(0, 0, 0, 0.6) 100%
+    );
+  }
+
+  [data-theme="terminal"] h1,
+  [data-theme="terminal"] h2,
+  [data-theme="terminal"] h3,
+  [data-theme="terminal"] .gradient-text {
+    text-shadow:
+      0 0 10px hsl(120 100% 50% / 0.8),
+      0 0 20px hsl(120 100% 50% / 0.4);
+  }
+
+  [data-theme="amber"] h1,
+  [data-theme="amber"] h2,
+  [data-theme="amber"] h3,
+  [data-theme="amber"] .gradient-text {
+    text-shadow:
+      0 0 10px hsl(35 100% 50% / 0.8),
+      0 0 20px hsl(35 100% 50% / 0.4);
+  }
+
+  [data-theme="cyberpunk"] h1,
+  [data-theme="cyberpunk"] h2,
+  [data-theme="cyberpunk"] .gradient-text,
+  [data-theme="synthwave"] h1,
+  [data-theme="synthwave"] h2,
+  [data-theme="synthwave"] .gradient-text,
+  [data-theme="vaporwave"] h1,
+  [data-theme="vaporwave"] h2,
+  [data-theme="vaporwave"] .gradient-text {
+    text-shadow: 0 0 14px hsl(var(--primary) / 0.5);
   }
 }
 

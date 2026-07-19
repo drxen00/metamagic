@@ -48,6 +48,8 @@ export interface MediaItem {
   duration?: number;
   addedAt?: number;
   viewCount?: number;
+  /** Season or episode number for children of a show/season */
+  index?: number;
   videoResolution?: string;
   genres?: string[];
   collections?: { tag: string; id?: string }[];
@@ -195,15 +197,22 @@ export const mediuxImportSchema = z.object({
 export type MediuxImportInput = z.infer<typeof mediuxImportSchema>;
 
 export interface MediuxMatch {
-  /** TMDb id for movies, TVDb id for shows (MediUX keys shows by TVDb) */
+  /** TMDb id for movies, TVDb id for shows (MediUX keys shows by TVDb), or collection name */
   id: string;
+  kind: "item" | "collection";
   title?: string;
   ratingKey?: string;
   thumb?: string;
   hasPoster: boolean;
   hasBackground: boolean;
+  /** Season posters present in the set */
+  seasonCount: number;
+  /** Episode title cards present in the set */
+  episodeCount: number;
   /** Only present in apply results */
   applied?: boolean;
+  appliedSeasons?: number;
+  appliedEpisodes?: number;
   error?: string;
 }
 

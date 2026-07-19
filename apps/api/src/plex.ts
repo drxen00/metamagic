@@ -44,6 +44,7 @@ interface PlexMetadata {
   addedAt?: number;
   viewCount?: number;
   childCount?: number;
+  index?: number;
   selected?: boolean;
   provider?: string;
   librarySectionID?: number | string;
@@ -217,6 +218,12 @@ export class PlexClient {
     return (data.MediaContainer.Metadata ?? []).map(toMediaItem);
   }
 
+  /** Children of a show (seasons) or season (episodes). */
+  async children(ratingKey: string): Promise<MediaItem[]> {
+    const data = await this.request(`/library/metadata/${ratingKey}/children`);
+    return (data.MediaContainer.Metadata ?? []).map(toMediaItem);
+  }
+
   private metadataUri(ratingKeys: string[]): string {
     if (!this.machineIdentifier) {
       throw new PlexError("Machine identifier unknown — reconnect to Plex in Settings.");
@@ -385,6 +392,7 @@ function toMediaItem(m: PlexMetadata): MediaItem {
     duration: m.duration,
     addedAt: m.addedAt,
     viewCount: m.viewCount,
+    index: m.index,
     videoResolution: m.Media?.[0]?.videoResolution,
     genres: m.Genre?.map((g) => g.tag),
     collections: m.Collection?.map((c) => ({

@@ -122,7 +122,7 @@ export default function SettingsPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="plex-token">X-Plex-Token</Label>
+              <Label htmlFor="plex-token">Plex Token</Label>
               <Input
                 id="plex-token"
                 type="password"
@@ -373,22 +373,42 @@ function MediuxImportCard() {
                   )}
                   <span className="flex-1 truncate">
                     {r.title ?? `id ${r.id}`}
+                    {r.kind === "collection" && (
+                      <Badge variant="outline" className="ml-1.5">
+                        collection
+                      </Badge>
+                    )}
                     <span className="ml-1.5 text-xs text-muted-foreground">
-                      {[r.hasPoster && "poster", r.hasBackground && "background"]
+                      {[
+                        r.hasPoster && "poster",
+                        r.hasBackground && "background",
+                        r.seasonCount > 0 &&
+                          `${mode === "apply" ? `${r.appliedSeasons ?? 0}/` : ""}${r.seasonCount} season${r.seasonCount === 1 ? "" : "s"}`,
+                        r.episodeCount > 0 &&
+                          `${mode === "apply" ? `${r.appliedEpisodes ?? 0}/` : ""}${r.episodeCount} card${r.episodeCount === 1 ? "" : "s"}`,
+                      ]
                         .filter(Boolean)
-                        .join(" + ")}
+                        .join(" · ")}
                     </span>
                   </span>
                   {mode === "apply" ? (
-                    r.applied ? (
-                      <CheckCircle2 className="h-4 w-4 shrink-0 text-success" />
-                    ) : (
-                      <span className="text-xs text-destructive">{r.error}</span>
-                    )
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {r.applied && <CheckCircle2 className="h-4 w-4 text-success" />}
+                      {r.error && (
+                        <span
+                          className="max-w-48 truncate text-xs text-destructive"
+                          title={r.error}
+                        >
+                          {r.error}
+                        </span>
+                      )}
+                    </span>
                   ) : r.ratingKey ? (
                     <Badge variant="success">match</Badge>
                   ) : (
-                    <Badge variant="outline">not in library</Badge>
+                    <Badge variant="outline">
+                      {r.kind === "collection" ? "no matching collection" : "not in library"}
+                    </Badge>
                   )}
                 </div>
               ))}

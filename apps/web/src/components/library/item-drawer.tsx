@@ -2,8 +2,14 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ImageIcon, Pencil, Plus, Star, Tag, X } from "lucide-react";
-import type { ArtworkKind, EditItemInput, MediaItem, PlexCollection } from "@metamagic/shared";
+import { Check, ExternalLink, ImageIcon, Pencil, Plus, Star, Tag, X } from "lucide-react";
+import type {
+  ArtworkKind,
+  ConnectionStatus,
+  EditItemInput,
+  MediaItem,
+  PlexCollection,
+} from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn, formatDuration, imageUrl } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +86,16 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
   });
 
   const collectionByTitle = new Map(collections?.map((c) => [c.title, c]) ?? []);
+
+  const { data: connection } = useQuery({
+    queryKey: ["connection"],
+    queryFn: () => api<ConnectionStatus>("/api/settings/connection"),
+    enabled: !!ratingKey,
+  });
+  const plexUrl =
+    connection?.server?.machineIdentifier && ratingKey
+      ? `https://app.plex.tv/desktop/#!/server/${connection.server.machineIdentifier}/details?key=${encodeURIComponent(`/library/metadata/${ratingKey}`)}`
+      : undefined;
 
   return (
     <Sheet open={!!ratingKey} onClose={onClose}>
@@ -182,17 +198,26 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
                   </Button>
                 </>
               ) : (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => {
-                    setTitle(item.title);
-                    setSummary(item.summary ?? "");
-                    setEditing(true);
-                  }}
-                >
-                  <Pencil className="h-3.5 w-3.5" /> Edit metadata
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setTitle(item.title);
+                      setSummary(item.summary ?? "");
+                      setEditing(true);
+                    }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Edit metadata
+                  </Button>
+                  {plexUrl && (
+                    <a href={plexUrl} target="_blank" rel="noreferrer">
+                      <Button size="sm" variant="outline">
+                        <ExternalLink className="h-3.5 w-3.5" /> Open in Plex
+                      </Button>
+                    </a>
+                  )}
+                </>
               )}
               {editError && <p className="text-xs text-destructive">{editError}</p>}
             </div>
