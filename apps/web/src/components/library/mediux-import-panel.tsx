@@ -200,6 +200,12 @@ export function MediuxImportPanel({ rows = 6 }: { rows?: number }) {
           </div>
         </div>
       )}
+      <p className="rounded-md border border-border/60 bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
+        <strong className="font-medium text-foreground/80">Collection posters:</strong> MediUX set
+        YAML almost never includes the collection’s own poster — only the movies’. To set it, open
+        the collection, hit Change poster, and paste the collection image link from MediUX in the
+        URL / Upload tab.
+      </p>
       <div className="flex gap-2">
         <Button
           variant="outline"

@@ -86,7 +86,7 @@ export async function tmdbSeasonArtwork(
 }
 
 interface TmdbCollectionSearch {
-  results?: { id: number; name: string }[];
+  results?: { id: number; name: string; poster_path?: string | null }[];
 }
 
 /** Find the TMDb collection id best matching a (cleaned) collection name. */
@@ -95,6 +95,36 @@ export async function searchTmdbCollection(query: string): Promise<number | unde
     `/search/collection?query=${encodeURIComponent(query)}`,
   );
   return data.results?.[0]?.id;
+}
+
+export interface TmdbCollectionOption {
+  id: number;
+  name: string;
+  posterUrl?: string;
+}
+
+/** Full search results, for the "pick the right collection" UI. */
+export async function searchTmdbCollections(query: string): Promise<TmdbCollectionOption[]> {
+  const data = await tmdbFetch<TmdbCollectionSearch>(
+    `/search/collection?query=${encodeURIComponent(query)}`,
+  );
+  return (data.results ?? []).slice(0, 12).map((r) => ({
+    id: r.id,
+    name: r.name,
+    posterUrl: r.poster_path ? `${IMG_PREVIEW}${r.poster_path}` : undefined,
+  }));
+}
+
+interface TmdbMovieDetail {
+  belongs_to_collection?: { id: number; name: string } | null;
+}
+
+/** The TMDb collection a specific movie belongs to, if any. */
+export async function movieCollection(
+  tmdbMovieId: string,
+): Promise<{ id: number; name: string } | undefined> {
+  const data = await tmdbFetch<TmdbMovieDetail>(`/movie/${tmdbMovieId}`);
+  return data.belongs_to_collection ?? undefined;
 }
 
 export function tmdbConfigured(): boolean {

@@ -35,6 +35,13 @@ db.exec(`
     value_enc TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS collection_links (
+    rating_key TEXT PRIMARY KEY,
+    tmdb_collection_id INTEGER NOT NULL,
+    tmdb_collection_name TEXT NOT NULL,
+    linked_at INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS artwork_sources (
     rating_key TEXT NOT NULL,
     kind TEXT NOT NULL,
@@ -157,6 +164,41 @@ export function getSessionUserId(tokenHash: string): number | undefined {
 
 export function deleteSession(tokenHash: string): void {
   db.prepare("DELETE FROM sessions WHERE token_hash = ?").run(tokenHash);
+}
+
+// ---------- Collection ↔ TMDb collection links ----------
+
+export interface CollectionLinkRow {
+  tmdbCollectionId: number;
+  tmdbCollectionName: string;
+}
+
+export function getCollectionLink(ratingKey: string): CollectionLinkRow | undefined {
+  const row = db
+    .prepare(
+      "SELECT tmdb_collection_id, tmdb_collection_name FROM collection_links WHERE rating_key = ?",
+    )
+    .get(ratingKey) as
+    | { tmdb_collection_id: number; tmdb_collection_name: string }
+    | undefined;
+  return row
+    ? { tmdbCollectionId: row.tmdb_collection_id, tmdbCollectionName: row.tmdb_collection_name }
+    : undefined;
+}
+
+export function setCollectionLink(ratingKey: string, id: number, name: string): void {
+  db.prepare(
+    `INSERT INTO collection_links (rating_key, tmdb_collection_id, tmdb_collection_name, linked_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(rating_key) DO UPDATE SET
+       tmdb_collection_id = excluded.tmdb_collection_id,
+       tmdb_collection_name = excluded.tmdb_collection_name,
+       linked_at = excluded.linked_at`,
+  ).run(ratingKey, id, name, Date.now());
+}
+
+export function deleteCollectionLink(ratingKey: string): void {
+  db.prepare("DELETE FROM collection_links WHERE rating_key = ?").run(ratingKey);
 }
 
 // ---------- Artwork provenance ----------

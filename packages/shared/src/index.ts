@@ -272,10 +272,26 @@ export interface MissingCollectionItem {
   unreleased?: boolean;
 }
 
+export interface TmdbCollectionOption {
+  id: number;
+  name: string;
+  posterUrl?: string;
+}
+
+export const linkCollectionSchema = z.object({
+  tmdbCollectionId: z.number().int().positive(),
+  tmdbCollectionName: z.string().min(1),
+});
+export type LinkCollectionInput = z.infer<typeof linkCollectionSchema>;
+
 export interface CollectionCompleteness {
   /** TMDb collection the Plex collection was matched to */
+  tmdbCollectionId?: number;
   tmdbCollectionName?: string;
   tmdbCollectionUrl?: string;
+  /** How the match was made: pinned by the user, inferred from the collection's
+   *  movies, guessed from the title, or not matched at all */
+  matchSource?: "manual" | "contents" | "title" | "none";
   /** Titles in the TMDb collection that aren't in this Plex collection */
   missing: MissingCollectionItem[];
   /** Of which: already in the library, just not added to the collection */

@@ -11,6 +11,7 @@ import type {
   MediaItem,
   PagedResult,
   PlexCollection,
+  TmdbCollectionOption,
 } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn, imageUrl } from "@/lib/utils";
@@ -64,6 +65,7 @@ export default function CollectionsPage() {
   });
   const [hideNotInLibrary, setHideNotInLibrary] = React.useState(false);
   const [hideUnreleased, setHideUnreleased] = React.useState(true);
+  const [linkOpen, setLinkOpen] = React.useState(false);
   const visibleMissing =
     completeness?.missing.filter(
       (m) => !(hideNotInLibrary && !m.ratingKey) && !(hideUnreleased && m.unreleased),
@@ -420,23 +422,44 @@ export default function CollectionsPage() {
             </div>
 
             {/* Missing from this collection (matched via TMDb) */}
-            {completeness?.tmdbCollectionName && (
+            {completeness && (
               <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
                     Missing from this collection
                   </h3>
-                  {completeness.tmdbCollectionUrl && (
-                    <a
-                      href={completeness.tmdbCollectionUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
-                    >
-                      {completeness.tmdbCollectionName} <ExternalLink className="h-3 w-3" />
-                    </a>
-                  )}
+                  <button
+                    onClick={() => setLinkOpen(true)}
+                    className="inline-flex items-center gap-1 text-xs text-primary underline-offset-2 hover:underline"
+                  >
+                    {completeness.tmdbCollectionName ? "Change match" : "Pick a TMDb collection"}
+                  </button>
                 </div>
+
+                <p className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                  {completeness.tmdbCollectionName ? (
+                    <>
+                      Comparing against
+                      <a
+                        href={completeness.tmdbCollectionUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+                      >
+                        {completeness.tmdbCollectionName} <ExternalLink className="h-3 w-3" />
+                      </a>
+                      <Badge variant={completeness.matchSource === "title" ? "outline" : "secondary"}>
+                        {completeness.matchSource === "manual"
+                          ? "pinned by you"
+                          : completeness.matchSource === "contents"
+                            ? "matched from contents"
+                            : "guessed from title"}
+                      </Badge>
+                    </>
+                  ) : (
+                    "No TMDb collection matched — pick one to see what's missing."
+                  )}
+                </p>
                 {completeness.missing.length > 0 && (
                   <div className="flex flex-wrap gap-1.5">
                     <button
@@ -572,6 +595,17 @@ export default function CollectionsPage() {
         />
       )}
 
+      {open && (
+        <LinkCollectionDialog
+          open={linkOpen}
+          onClose={() => setLinkOpen(false)}
+          ratingKey={open.ratingKey}
+          collectionTitle={open.title}
+          currentId={completeness?.tmdbCollectionId}
+          isPinned={completeness?.matchSource === "manual"}
+        />
+      )}
+
       {open && pickerOpen && (
         <PosterPicker
           open
@@ -638,6 +672,123 @@ export default function CollectionsPage() {
         </div>
       </Dialog>
     </main>
+  );
+}
+
+function LinkCollectionDialog({
+  open,
+  onClose,
+  ratingKey,
+  collectionTitle,
+  currentId,
+  isPinned,
+}: {
+  open: boolean;
+  onClose: () => void;
+  ratingKey: string;
+  collectionTitle: string;
+  currentId?: number;
+  isPinned?: boolean;
+}) {
+  const qc = useQueryClient();
+  const [query, setQuery] = React.useState("");
+  const [debounced, setDebounced] = React.useState("");
+
+  React.useEffect(() => {
+    if (open) setQuery(collectionTitle.replace(/\s+collection\s*$/i, "").trim());
+  }, [open, collectionTitle]);
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const { data: options, isFetching } = useQuery({
+    queryKey: ["tmdb-collections", debounced],
+    queryFn: () =>
+      api<TmdbCollectionOption[]>(`/api/tmdb/collections?q=${encodeURIComponent(debounced)}`),
+    enabled: open && debounced.trim().length > 1,
+  });
+
+  const finish = () => {
+    qc.invalidateQueries({ queryKey: ["collection-missing"] });
+    onClose();
+  };
+
+  const link = useMutation({
+    mutationFn: (option: TmdbCollectionOption) =>
+      api(`/api/collections/${ratingKey}/link`, {
+        method: "PUT",
+        body: JSON.stringify({ tmdbCollectionId: option.id, tmdbCollectionName: option.name }),
+      }),
+    onSuccess: finish,
+  });
+
+  const unlink = useMutation({
+    mutationFn: () => api(`/api/collections/${ratingKey}/link`, { method: "DELETE" }),
+    onSuccess: finish,
+  });
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Which TMDb collection is this?" className="max-w-lg">
+      <div className="space-y-4">
+        <p className="text-sm text-muted-foreground">
+          MetaMagic uses this to work out what’s missing. Search for the franchise — e.g. “The Lord
+          of the Rings” — and pick the collection that holds the actual movies.
+        </p>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            autoFocus
+            placeholder="Search TMDb collections…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+
+        <div className="max-h-72 space-y-1 overflow-y-auto pr-1">
+          {isFetching && !options ? (
+            <p className="px-1 py-2 text-sm text-muted-foreground">Searching…</p>
+          ) : options && options.length > 0 ? (
+            options.map((o) => (
+              <button
+                key={o.id}
+                disabled={link.isPending}
+                onClick={() => link.mutate(o)}
+                className={cn(
+                  "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm hover:bg-secondary/60 disabled:opacity-50",
+                  o.id === currentId && "bg-secondary/60",
+                )}
+              >
+                {o.posterUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={o.posterUrl} alt="" className="h-12 w-8 rounded object-cover" />
+                ) : (
+                  <span className="h-12 w-8 rounded bg-secondary" />
+                )}
+                <span className="flex-1 truncate">{o.name}</span>
+                {o.id === currentId ? (
+                  <Badge variant="success">current</Badge>
+                ) : (
+                  <Plus className="h-4 w-4 text-primary" />
+                )}
+              </button>
+            ))
+          ) : debounced.trim().length > 1 ? (
+            <p className="px-1 py-2 text-sm text-muted-foreground">
+              No TMDb collections matched that search.
+            </p>
+          ) : null}
+        </div>
+
+        {isPinned && (
+          <Button variant="outline" size="sm" loading={unlink.isPending} onClick={() => unlink.mutate()}>
+            Clear pin (back to automatic)
+          </Button>
+        )}
+      </div>
+    </Dialog>
   );
 }
 
