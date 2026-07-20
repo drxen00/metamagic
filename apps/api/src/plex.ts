@@ -56,7 +56,20 @@ interface PlexMetadata {
   Collection?: { tag: string; id?: number }[];
   Label?: { tag: string }[];
   Guid?: { id: string }[];
-  Media?: { videoResolution?: string }[];
+  Media?: {
+    videoResolution?: string;
+    audioCodec?: string;
+    audioChannels?: number;
+    Part?: {
+      Stream?: {
+        streamType?: number;
+        codec?: string;
+        colorTrc?: string;
+        DOVIPresent?: boolean;
+        displayTitle?: string;
+      }[];
+    }[];
+  }[];
 }
 
 interface PlexContainer {
@@ -384,6 +397,21 @@ export class PlexClient {
   }
 }
 
+/**
+ * Dolby Vision / HDR from the video stream. Streams only come back on the
+ * per-item metadata call, so this is undefined in section listings.
+ */
+function detectHdr(m: PlexMetadata): "dv" | "hdr" | undefined {
+  const video = m.Media?.[0]?.Part?.[0]?.Stream?.find((s) => s.streamType === 1);
+  if (!video) return undefined;
+  if (video.DOVIPresent) return "dv";
+  const title = video.displayTitle?.toLowerCase() ?? "";
+  if (video.colorTrc === "smpte2084" || video.colorTrc === "arib-std-b67") return "hdr";
+  if (title.includes("dolby vision") || title.includes("dv")) return "dv";
+  if (title.includes("hdr")) return "hdr";
+  return undefined;
+}
+
 function toMediaItem(m: PlexMetadata): MediaItem {
   const guid = (prefix: string) =>
     m.Guid?.find((g) => g.id.startsWith(prefix))?.id.slice(prefix.length);
@@ -415,6 +443,9 @@ function toMediaItem(m: PlexMetadata): MediaItem {
     index: m.index,
     parentRatingKey: m.parentRatingKey,
     videoResolution: m.Media?.[0]?.videoResolution,
+    audioCodec: m.Media?.[0]?.audioCodec,
+    audioChannels: m.Media?.[0]?.audioChannels,
+    hdr: detectHdr(m),
     genres: m.Genre?.map((g) => g.tag),
     collections: m.Collection?.map((c) => ({
       tag: c.tag,

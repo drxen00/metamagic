@@ -20,8 +20,10 @@ RUN pnpm --filter @metamagic/api --prod deploy --legacy /out/api
 
 # ---------- Runtime ----------
 FROM node:22-bookworm-slim
+# fonts-dejavu-core: sharp renders overlay badge text via SVG, which needs a
+# real font installed — without it labels silently render blank.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends gosu \
+  && apt-get install -y --no-install-recommends gosu fonts-dejavu-core \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

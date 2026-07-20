@@ -52,6 +52,10 @@ export interface MediaItem {
   index?: number;
   parentRatingKey?: string;
   videoResolution?: string;
+  audioCodec?: string;
+  audioChannels?: number;
+  /** Only populated by the per-item metadata call, not section listings */
+  hdr?: "dv" | "hdr";
   genres?: string[];
   collections?: { tag: string; id?: string }[];
   labels?: string[];
@@ -407,6 +411,63 @@ export type AutomationSettingsInput = z.infer<typeof automationSettingsSchema>;
 export interface KeywordOption {
   id: number;
   name: string;
+}
+
+// ---------- Overlays ----------
+
+export const badgeTypeSchema = z.enum([
+  "resolution",
+  "hdr",
+  "audio",
+  "rating",
+  "new",
+  "text",
+]);
+export type BadgeType = z.infer<typeof badgeTypeSchema>;
+
+export const badgePositionSchema = z.enum([
+  "top-left",
+  "top-right",
+  "bottom-left",
+  "bottom-right",
+  "top-center",
+  "bottom-center",
+]);
+export type BadgePosition = z.infer<typeof badgePositionSchema>;
+
+export const badgeSchema = z.object({
+  type: badgeTypeSchema,
+  position: badgePositionSchema.default("bottom-right"),
+  /** Relative badge scale, 1 = default */
+  scale: z.number().min(0.5).max(2).default(1),
+  /** Background colour (hex) — the accent bar behind the label */
+  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#111827"),
+  /** For type "text": the literal label. For "new": days threshold as text. */
+  value: z.string().optional(),
+});
+export type Badge = z.infer<typeof badgeSchema>;
+
+export const overlayPresetInputSchema = z.object({
+  name: z.string().min(1, "Give the preset a name"),
+  badges: z.array(badgeSchema).min(1, "Add at least one badge"),
+});
+export type OverlayPresetInput = z.infer<typeof overlayPresetInputSchema>;
+
+export interface OverlayPreset extends OverlayPresetInput {
+  id: number;
+}
+
+export const applyOverlaySchema = z.object({
+  presetId: z.number().int().positive(),
+  sectionId: z.string().min(1),
+  /** Limit to specific items; omit to apply across the whole section */
+  ratingKeys: z.array(z.string()).optional(),
+});
+export type ApplyOverlayInput = z.infer<typeof applyOverlaySchema>;
+
+export interface OverlayStatus {
+  /** Items whose original poster MetaMagic has stored (i.e. overlaid) */
+  overlaidCount: number;
 }
 
 // ---------- Collection discovery ----------

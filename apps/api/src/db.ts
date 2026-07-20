@@ -1,6 +1,15 @@
 import Database from "better-sqlite3";
 import path from "node:path";
-import type { Rule, RuleInput, RuleRun, RuleSource, RunStatus } from "@metamagic/shared";
+import type {
+  Badge,
+  OverlayPreset,
+  OverlayPresetInput,
+  Rule,
+  RuleInput,
+  RuleRun,
+  RuleSource,
+  RunStatus,
+} from "@metamagic/shared";
 import { CONFIG_DIR } from "./env.js";
 import { encrypt, decrypt } from "./crypto.js";
 
@@ -86,6 +95,22 @@ db.exec(`
   );
 
   CREATE INDEX IF NOT EXISTS idx_rule_runs_started ON rule_runs(started_at DESC);
+
+  CREATE TABLE IF NOT EXISTS overlay_presets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    badges_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+
+  /* The untouched poster, saved before the first overlay is burned in, so
+     overlays are always composited from the original and can be undone. */
+  CREATE TABLE IF NOT EXISTS original_artwork (
+    rating_key TEXT PRIMARY KEY,
+    file_name TEXT NOT NULL,
+    content_type TEXT NOT NULL,
+    saved_at INTEGER NOT NULL
+  );
 
   /* Cached TMDb movie → collection lookups so repeat discovery scans are cheap */
   CREATE TABLE IF NOT EXISTS tmdb_movie_cache (
@@ -475,6 +500,104 @@ export function resolveRun(id: number, status: RunStatus, addedCount = 0, remove
   db.prepare(
     "UPDATE rule_runs SET status = ?, pending_json = NULL, added_count = ?, removed_count = ? WHERE id = ?",
   ).run(status, addedCount, removedCount, id);
+}
+
+// ---------- Overlay presets ----------
+
+interface OverlayPresetRow {
+  id: number;
+  name: string;
+  badges_json: string;
+}
+
+function toPreset(row: OverlayPresetRow): OverlayPreset {
+  return { id: row.id, name: row.name, badges: JSON.parse(row.badges_json) as Badge[] };
+}
+
+export function listOverlayPresets(): OverlayPreset[] {
+  return (
+    db.prepare("SELECT * FROM overlay_presets ORDER BY id").all() as OverlayPresetRow[]
+  ).map(toPreset);
+}
+
+export function getOverlayPreset(id: number): OverlayPreset | undefined {
+  const row = db.prepare("SELECT * FROM overlay_presets WHERE id = ?").get(id) as
+    | OverlayPresetRow
+    | undefined;
+  return row ? toPreset(row) : undefined;
+}
+
+export function createOverlayPreset(input: OverlayPresetInput): OverlayPreset {
+  const info = db
+    .prepare("INSERT INTO overlay_presets (name, badges_json, created_at) VALUES (?, ?, ?)")
+    .run(input.name, JSON.stringify(input.badges), Date.now());
+  return getOverlayPreset(Number(info.lastInsertRowid))!;
+}
+
+export function updateOverlayPreset(
+  id: number,
+  input: OverlayPresetInput,
+): OverlayPreset | undefined {
+  db.prepare("UPDATE overlay_presets SET name = ?, badges_json = ? WHERE id = ?").run(
+    input.name,
+    JSON.stringify(input.badges),
+    id,
+  );
+  return getOverlayPreset(id);
+}
+
+export function deleteOverlayPreset(id: number): void {
+  db.prepare("DELETE FROM overlay_presets WHERE id = ?").run(id);
+}
+
+// ---------- Original artwork (overlay safety net) ----------
+
+export interface OriginalArtworkRow {
+  ratingKey: string;
+  fileName: string;
+  contentType: string;
+}
+
+export function getOriginalArtwork(ratingKey: string): OriginalArtworkRow | undefined {
+  const row = db
+    .prepare("SELECT rating_key, file_name, content_type FROM original_artwork WHERE rating_key = ?")
+    .get(ratingKey) as
+    | { rating_key: string; file_name: string; content_type: string }
+    | undefined;
+  return row
+    ? { ratingKey: row.rating_key, fileName: row.file_name, contentType: row.content_type }
+    : undefined;
+}
+
+export function recordOriginalArtwork(
+  ratingKey: string,
+  fileName: string,
+  contentType: string,
+): void {
+  db.prepare(
+    `INSERT INTO original_artwork (rating_key, file_name, content_type, saved_at)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(rating_key) DO NOTHING`,
+  ).run(ratingKey, fileName, contentType, Date.now());
+}
+
+export function deleteOriginalArtwork(ratingKey: string): void {
+  db.prepare("DELETE FROM original_artwork WHERE rating_key = ?").run(ratingKey);
+}
+
+export function listOriginalArtwork(): OriginalArtworkRow[] {
+  return (
+    db.prepare("SELECT rating_key, file_name, content_type FROM original_artwork").all() as {
+      rating_key: string;
+      file_name: string;
+      content_type: string;
+    }[]
+  ).map((r) => ({ ratingKey: r.rating_key, fileName: r.file_name, contentType: r.content_type }));
+}
+
+export function countOriginalArtwork(): number {
+  const row = db.prepare("SELECT COUNT(*) AS n FROM original_artwork").get() as { n: number };
+  return row.n;
 }
 
 // ---------- TMDb movie → collection cache ----------

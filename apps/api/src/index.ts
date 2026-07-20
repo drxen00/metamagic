@@ -14,6 +14,7 @@ import { plexClient, requirePlex } from "./client-store.js";
 import { registerAuth } from "./auth.js";
 import { registerEditingRoutes } from "./routes-editing.js";
 import { registerRuleRoutes } from "./routes-rules.js";
+import { registerOverlayRoutes } from "./routes-overlays.js";
 import { startScheduler } from "./scheduler.js";
 import { TmdbError } from "./tmdb.js";
 import { MediuxError } from "./mediux.js";
@@ -61,6 +62,7 @@ app.setErrorHandler((err: unknown, _req, reply) => {
 registerAuth(app);
 registerEditingRoutes(app);
 registerRuleRoutes(app);
+registerOverlayRoutes(app);
 
 app.get("/api/health", async () => ({ status: "ok", app: "metamagic" }));
 
