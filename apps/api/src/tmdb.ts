@@ -1,5 +1,5 @@
 import type { ArtworkOption } from "@metamagic/shared";
-import { getAppSetting } from "./db.js";
+import { cacheMovieCollection, getAppSetting, getCachedMovieCollection } from "./db.js";
 
 const TMDB_API = "https://api.themoviedb.org/3";
 const IMG_PREVIEW = "https://image.tmdb.org/t/p/w342";
@@ -115,16 +115,65 @@ export async function searchTmdbCollections(query: string): Promise<TmdbCollecti
   }));
 }
 
+interface TmdbKeywordSearch {
+  results?: { id: number; name: string }[];
+}
+
+/** Keyword search — powers character/franchise rules ("scooby-doo", "marvel cinematic universe"). */
+export async function searchKeywords(query: string): Promise<{ id: number; name: string }[]> {
+  const data = await tmdbFetch<TmdbKeywordSearch>(
+    `/search/keyword?query=${encodeURIComponent(query)}`,
+  );
+  return (data.results ?? []).slice(0, 15);
+}
+
+interface TmdbDiscover {
+  page: number;
+  total_pages: number;
+  results?: (TmdbTitleResponse & { id: number })[];
+}
+
+/** Every movie carrying a keyword (paged, capped so one rule can't hammer the API). */
+export async function discoverByKeyword(
+  keywordId: number,
+  maxPages = 5,
+): Promise<(ResolvedTitle & { tmdbId: string })[]> {
+  const out: (ResolvedTitle & { tmdbId: string })[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await tmdbFetch<TmdbDiscover>(
+      `/discover/movie?with_keywords=${keywordId}&page=${page}&include_adult=false`,
+    );
+    for (const r of data.results ?? []) {
+      const resolved = toResolved(r);
+      if (resolved) out.push({ ...resolved, tmdbId: String(r.id) });
+    }
+    if (page >= (data.total_pages ?? 1)) break;
+  }
+  return out;
+}
+
 interface TmdbMovieDetail {
   belongs_to_collection?: { id: number; name: string } | null;
 }
 
-/** The TMDb collection a specific movie belongs to, if any. */
+/** The TMDb collection a specific movie belongs to, if any (30-day cached). */
 export async function movieCollection(
   tmdbMovieId: string,
 ): Promise<{ id: number; name: string } | undefined> {
+  const cached = getCachedMovieCollection(tmdbMovieId);
+  if (cached) {
+    return cached.collectionId && cached.collectionName
+      ? { id: cached.collectionId, name: cached.collectionName }
+      : undefined;
+  }
   const data = await tmdbFetch<TmdbMovieDetail>(`/movie/${tmdbMovieId}`);
-  return data.belongs_to_collection ?? undefined;
+  const belongs = data.belongs_to_collection ?? undefined;
+  cacheMovieCollection(tmdbMovieId, belongs?.id ?? null, belongs?.name ?? null);
+  return belongs;
+}
+
+export function collectionPosterUrl(posterPath?: string | null): string | undefined {
+  return posterPath ? `${IMG_PREVIEW}${posterPath}` : undefined;
 }
 
 export function tmdbConfigured(): boolean {

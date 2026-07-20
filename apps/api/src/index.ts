@@ -13,6 +13,8 @@ import { PlexClient, PlexError } from "./plex.js";
 import { plexClient, requirePlex } from "./client-store.js";
 import { registerAuth } from "./auth.js";
 import { registerEditingRoutes } from "./routes-editing.js";
+import { registerRuleRoutes } from "./routes-rules.js";
+import { startScheduler } from "./scheduler.js";
 import { TmdbError } from "./tmdb.js";
 import { MediuxError } from "./mediux.js";
 
@@ -31,9 +33,23 @@ app.setErrorHandler((err: unknown, _req, reply) => {
       error: err.message,
     });
   }
-  const e = err as { validation?: unknown; name?: string; message?: string };
+  const e = err as {
+    validation?: unknown;
+    name?: string;
+    message?: string;
+    issues?: { message: string; path?: (string | number)[] }[];
+  };
   if (e.validation || e.name === "ZodError") {
-    return reply.status(400).send({ error: e.message ?? "Invalid request" });
+    // Surface the first issue in plain language — raw Zod JSON is unreadable
+    // in a form error, which is exactly where these land.
+    const issue = e.issues?.[0];
+    const field = issue?.path?.filter((p) => typeof p === "string").join(".");
+    const message = issue
+      ? field
+        ? `${field}: ${issue.message}`
+        : issue.message
+      : (e.message ?? "Invalid request");
+    return reply.status(400).send({ error: message });
   }
   if (err instanceof MediuxError) {
     return reply.status(400).send({ error: err.message });
@@ -44,6 +60,7 @@ app.setErrorHandler((err: unknown, _req, reply) => {
 
 registerAuth(app);
 registerEditingRoutes(app);
+registerRuleRoutes(app);
 
 app.get("/api/health", async () => ({ status: "ok", app: "metamagic" }));
 
@@ -194,7 +211,10 @@ app.get<{ Querystring: { path?: string; w?: string; h?: string } }>(
 
 app
   .listen({ port: PORT, host: HOST })
-  .then(() => app.log.info(`MetaMagic API on :${PORT}`))
+  .then(() => {
+    app.log.info(`MetaMagic API on :${PORT}`);
+    startScheduler(app.log);
+  })
   .catch((err) => {
     app.log.error(err);
     process.exit(1);

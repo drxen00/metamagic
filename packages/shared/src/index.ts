@@ -311,6 +311,116 @@ export const tpdbSetSchema = z.object({
 });
 export type TpdbSetInput = z.infer<typeof tpdbSetSchema>;
 
+// ---------- Rules & automations ----------
+
+export const ruleSourceSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("tmdb-collection"),
+    tmdbCollectionId: z.number().int().positive(),
+    tmdbCollectionName: z.string().min(1),
+  }),
+  z.object({
+    kind: z.literal("tmdb-keyword"),
+    keywordId: z.number().int().positive(),
+    keywordName: z.string().min(1),
+  }),
+]);
+export type RuleSource = z.infer<typeof ruleSourceSchema>;
+
+export const ruleScheduleSchema = z.enum(["manual", "hourly", "daily", "weekly"]);
+export type RuleSchedule = z.infer<typeof ruleScheduleSchema>;
+
+export const ruleInputSchema = z.object({
+  name: z.string().min(1, "Give the rule a name"),
+  enabled: z.boolean().default(true),
+  requireApproval: z.boolean().default(false),
+  sectionId: z.string().min(1),
+  source: ruleSourceSchema,
+  collectionTitle: z.string().min(1, "Collection name is required"),
+  collectionRatingKey: z.string().optional(),
+  addMatching: z.boolean().default(true),
+  removeStrays: z.boolean().default(false),
+  mediuxYaml: z.string().optional(),
+  schedule: ruleScheduleSchema.default("daily"),
+});
+export type RuleInput = z.infer<typeof ruleInputSchema>;
+
+export interface Rule extends Omit<RuleInput, "enabled" | "requireApproval" | "addMatching" | "removeStrays" | "schedule"> {
+  id: number;
+  enabled: boolean;
+  requireApproval: boolean;
+  addMatching: boolean;
+  removeStrays: boolean;
+  schedule: RuleSchedule;
+  lastRunAt?: number;
+  lastResult?: string;
+}
+
+export interface RuleChange {
+  ratingKey: string;
+  title: string;
+  year?: number;
+  thumb?: string;
+}
+
+export interface RuleEvaluation {
+  ruleId: number;
+  ruleName: string;
+  collectionTitle: string;
+  /** In the library + matched by the source, not yet in the collection */
+  toAdd: RuleChange[];
+  /** In the collection but not matched by the source (only when removeStrays) */
+  toRemove: RuleChange[];
+  /** Matched by source but not in the library at all */
+  missingFromLibrary: { tmdbId: string; title: string; year?: number; posterUrl?: string }[];
+  applied: boolean;
+}
+
+export type RunStatus = "applied" | "pending" | "no-changes" | "error" | "dismissed";
+
+export interface RuleRun {
+  id: number;
+  ruleId: number;
+  ruleName: string;
+  startedAt: number;
+  status: RunStatus;
+  trigger: "manual" | "schedule";
+  addedCount: number;
+  removedCount: number;
+  error?: string;
+  log: string[];
+  /** Present while status is "pending" — the diff awaiting approval */
+  pending?: { toAdd: RuleChange[]; toRemove: RuleChange[] };
+}
+
+export interface AutomationSettings {
+  paused: boolean;
+  discordConfigured: boolean;
+}
+
+export const automationSettingsSchema = z.object({
+  paused: z.boolean().optional(),
+  discordWebhookUrl: z.string().optional(),
+});
+export type AutomationSettingsInput = z.infer<typeof automationSettingsSchema>;
+
+export interface KeywordOption {
+  id: number;
+  name: string;
+}
+
+// ---------- Collection discovery ----------
+
+export interface DiscoveredCollection {
+  tmdbCollectionId: number;
+  name: string;
+  posterUrl?: string;
+  /** Library items already owned that belong to this collection */
+  owned: { ratingKey: string; title: string; year?: number; thumb?: string }[];
+  totalParts: number;
+  sectionId: string;
+}
+
 // ---------- API error envelope ----------
 
 export interface ApiError {

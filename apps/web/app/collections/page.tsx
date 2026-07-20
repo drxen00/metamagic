@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ItemDrawer } from "@/components/library/item-drawer";
 import { PosterPicker } from "@/components/library/poster-picker";
 import { ProvenanceNote } from "@/components/library/provenance-note";
+import { DiscoverPanel } from "@/components/rules/discover-panel";
 
 export default function CollectionsPage() {
   const qc = useQueryClient();
@@ -172,7 +173,9 @@ export default function CollectionsPage() {
           </Button>
         }
       />
-      <div className="p-6 pb-24">
+      <div className="space-y-6 p-6 pb-24">
+        <DiscoverPanel />
+
         {isLoading ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
