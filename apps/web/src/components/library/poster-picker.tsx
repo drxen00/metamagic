@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { MediuxImportPanel } from "./mediux-import-panel";
 
 interface PosterPickerProps {
   open: boolean;
@@ -37,7 +38,7 @@ interface PosterPickerProps {
   itemType?: string;
 }
 
-type Tab = "plex" | "tmdb" | "url";
+type Tab = "plex" | "tmdb" | "url" | "yaml";
 
 const TPDB_SET_RE = /^https?:\/\/(?:www\.)?theposterdb\.com\/set\/\d+/i;
 
@@ -166,6 +167,7 @@ export function PosterPicker({
               { id: "plex", label: "Plex" },
               { id: "tmdb", label: "TMDb" },
               { id: "url", label: "URL / Upload" },
+              { id: "yaml", label: "MediUX YAML" },
             ] as { id: Tab; label: string }[]
           ).map((t) => (
             <button
@@ -203,7 +205,16 @@ export function PosterPicker({
           </span>
         </div>
 
-        {tab !== "url" ? (
+        {tab === "yaml" ? (
+          <div className="mx-auto max-h-[74vh] w-full max-w-3xl overflow-y-auto py-2 pr-1">
+            <p className="mb-3 text-sm text-muted-foreground">
+              Paste the “Copy YAML” block from a MediUX set page — it applies to everything it
+              matches in your libraries (shows, seasons, episode cards, movies), not just this
+              item.
+            </p>
+            <MediuxImportPanel rows={8} />
+          </div>
+        ) : tab !== "url" ? (
           <div className="max-h-[74vh] min-h-[40vh] overflow-y-auto pr-1">
             {isLoading ? (
               <div

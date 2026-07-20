@@ -30,6 +30,8 @@ export class PlexError extends Error {
 interface PlexMetadata {
   ratingKey: string;
   key: string;
+  /** Legacy agent guid, e.g. com.plexapp.agents.thetvdb://269586?lang=en */
+  guid?: string;
   title: string;
   titleSort?: string;
   type: string;
@@ -221,13 +223,17 @@ export class PlexClient {
   }
 
   async collectionChildren(ratingKey: string): Promise<MediaItem[]> {
-    const data = await this.request(`/library/collections/${ratingKey}/children`);
+    const data = await this.request(`/library/collections/${ratingKey}/children`, {
+      includeGuids: 1,
+    });
     return (data.MediaContainer.Metadata ?? []).map(toMediaItem);
   }
 
   /** Children of a show (seasons) or season (episodes). */
   async children(ratingKey: string): Promise<MediaItem[]> {
-    const data = await this.request(`/library/metadata/${ratingKey}/children`);
+    const data = await this.request(`/library/metadata/${ratingKey}/children`, {
+      includeGuids: 1,
+    });
     return (data.MediaContainer.Metadata ?? []).map(toMediaItem);
   }
 
@@ -381,13 +387,20 @@ export class PlexClient {
 function toMediaItem(m: PlexMetadata): MediaItem {
   const guid = (prefix: string) =>
     m.Guid?.find((g) => g.id.startsWith(prefix))?.id.slice(prefix.length);
+  // Older agents (thetvdb, themoviedb, HAMA anime) put the id in the legacy
+  // guid string instead of the Guid array.
+  const legacy = m.guid ?? "";
+  const legacyTvdb =
+    legacy.match(/thetvdb:\/\/(\d+)/i)?.[1] ?? legacy.match(/tvdb[-=](\d+)/i)?.[1];
+  const legacyTmdb =
+    legacy.match(/themoviedb:\/\/(\d+)/i)?.[1] ?? legacy.match(/tmdb[-=](\d+)/i)?.[1];
   return {
     ratingKey: m.ratingKey,
     title: m.title,
     titleSort: m.titleSort,
     librarySectionId: m.librarySectionID !== undefined ? String(m.librarySectionID) : undefined,
-    tmdbId: guid("tmdb://"),
-    tvdbId: guid("tvdb://"),
+    tmdbId: guid("tmdb://") ?? legacyTmdb,
+    tvdbId: guid("tvdb://") ?? legacyTvdb,
     type: m.type,
     year: m.year,
     thumb: m.thumb,

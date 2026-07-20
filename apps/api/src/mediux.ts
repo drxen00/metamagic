@@ -185,6 +185,8 @@ export async function indexByIds(client: PlexClient): Promise<Map<string, Indexe
         if (item.tvdbId && !index.has(`tvdb:${item.tvdbId}`)) {
           index.set(`tvdb:${item.tvdbId}`, indexed);
         }
+        const titleKey = `title:${normTitle(item.title)}`;
+        if (!index.has(titleKey)) index.set(titleKey, indexed);
       }
       offset += limit;
       if (offset >= page.totalSize || page.items.length === 0) break;
@@ -195,6 +197,33 @@ export async function indexByIds(client: PlexClient): Promise<Map<string, Indexe
 
 function lookup(index: Map<string, IndexedItem>, id: string): IndexedItem | undefined {
   return index.get(`tmdb:${id}`) ?? index.get(`tvdb:${id}`);
+}
+
+function normTitle(t: string): string {
+  return t
+    .toLowerCase()
+    .replace(/[:'’!.,–—-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
+ * Match a YAML entry to a library item: by TMDb/TVDb id first, then — for
+ * items whose Plex agent didn't expose ids — by exact (normalized) title
+ * resolved through TMDb.
+ */
+async function matchEntry(
+  index: Map<string, IndexedItem>,
+  id: string,
+): Promise<{ hit?: IndexedItem; external?: Awaited<ReturnType<typeof resolveTitleById>> }> {
+  const direct = lookup(index, id);
+  if (direct) return { hit: direct };
+  const external = await resolveTitleById(id).catch(() => undefined);
+  if (external) {
+    const byTitle = index.get(`title:${normTitle(external.title)}`);
+    if (byTitle) return { hit: byTitle, external };
+  }
+  return { external };
 }
 
 function normalizeName(name: string): string {
@@ -241,8 +270,7 @@ export async function previewMediux(client: PlexClient, yamlText: string): Promi
   }
 
   for (const e of set.entries) {
-    const hit = lookup(index, e.id);
-    const external = hit ? undefined : await resolveTitleById(e.id).catch(() => undefined);
+    const { hit, external } = await matchEntry(index, e.id);
     results.push({
       id: e.id,
       kind: "item",
@@ -323,16 +351,16 @@ export async function applyMediux(
   }
 
   for (const e of set.entries) {
-    const hit = lookup(index, e.id);
+    const { hit, external } = await matchEntry(index, e.id);
     report?.setCurrent(
-      `Applying ${hit?.title ?? `id ${e.id}`} (${++done}/${total})…`,
+      `Applying ${hit?.title ?? formatResolved(external) ?? `id ${e.id}`} (${++done}/${total})…`,
     );
     const result: MediuxMatch = {
       id: e.id,
       kind: "item",
-      title: hit?.title,
+      title: hit?.title ?? formatResolved(external),
       ratingKey: hit?.ratingKey,
-      thumb: hit?.thumb,
+      thumb: hit?.thumb ?? external?.posterUrl,
       hasPoster: !!e.urlPoster,
       hasBackground: !!e.urlBackground,
       seasonCount: seasonCount(e),
@@ -342,9 +370,6 @@ export async function applyMediux(
       appliedEpisodes: 0,
     };
     if (!hit) {
-      const external = await resolveTitleById(e.id).catch(() => undefined);
-      result.title = formatResolved(external);
-      result.thumb = external?.posterUrl;
       result.error = "Not found in your libraries";
       report?.log(`✗ ${result.title ?? `id ${e.id}`} — not found in your libraries`);
       results.push(result);

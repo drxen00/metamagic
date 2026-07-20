@@ -268,6 +268,8 @@ export interface MissingCollectionItem {
   posterUrl?: string;
   /** Set when the movie is in the library (but not in the collection) — enables one-click add */
   ratingKey?: string;
+  /** Not yet released (or unannounced date) per TMDb */
+  unreleased?: boolean;
 }
 
 export interface CollectionCompleteness {

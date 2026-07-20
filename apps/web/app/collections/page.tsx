@@ -62,6 +62,13 @@ export default function CollectionsPage() {
     retry: false,
     staleTime: 5 * 60_000,
   });
+  const [hideNotInLibrary, setHideNotInLibrary] = React.useState(false);
+  const [hideUnreleased, setHideUnreleased] = React.useState(true);
+  const visibleMissing =
+    completeness?.missing.filter(
+      (m) => !(hideNotInLibrary && !m.ratingKey) && !(hideUnreleased && m.unreleased),
+    ) ?? [];
+  const hiddenCount = (completeness?.missing.length ?? 0) - visibleMissing.length;
 
   React.useEffect(() => {
     const t = setTimeout(() => setDebouncedAddSearch(addSearch), 300);
@@ -430,13 +437,42 @@ export default function CollectionsPage() {
                     </a>
                   )}
                 </div>
-                {completeness.missing.length === 0 ? (
+                {completeness.missing.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    <button
+                      onClick={() => setHideUnreleased((v) => !v)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
+                        hideUnreleased
+                          ? "border-primary bg-primary/15 text-primary"
+                          : "border-border text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Hide unreleased
+                    </button>
+                    <button
+                      onClick={() => setHideNotInLibrary((v) => !v)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors",
+                        hideNotInLibrary
+                          ? "border-primary bg-primary/15 text-primary"
+                          : "border-border text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      Hide not-in-library
+                    </button>
+                  </div>
+                )}
+                {visibleMissing.length === 0 ? (
                   <p className="flex items-center gap-1.5 text-sm text-success">
-                    <Check className="h-4 w-4" /> Complete — every entry from TMDb is here.
+                    <Check className="h-4 w-4" />
+                    {completeness.missing.length === 0
+                      ? "Complete — every entry from TMDb is here."
+                      : `Complete — ${hiddenCount} hidden by filters.`}
                   </p>
                 ) : (
                   <div className="space-y-1">
-                    {completeness.missing.map((m) => (
+                    {visibleMissing.map((m) => (
                       <div
                         key={m.tmdbId}
                         className="flex items-center gap-3 rounded-md px-2 py-1.5 text-sm"
@@ -459,6 +495,11 @@ export default function CollectionsPage() {
                           {m.year ? (
                             <span className="text-muted-foreground"> ({m.year})</span>
                           ) : null}
+                          {m.unreleased && (
+                            <Badge variant="outline" className="ml-1.5">
+                              unreleased
+                            </Badge>
+                          )}
                         </span>
                         {m.ratingKey ? (
                           <Button

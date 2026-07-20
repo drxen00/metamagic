@@ -361,6 +361,7 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       const inCollection = new Set(children.map((c) => c.tmdbId).filter(Boolean));
       const libraryIndex = await indexByIds(client);
 
+      const today = new Date().toISOString().slice(0, 10);
       const missing: MissingCollectionItem[] = tmdbCollection.parts
         .filter((p) => !inCollection.has(p.tmdbId))
         .map((p) => ({
@@ -369,6 +370,7 @@ export function registerEditingRoutes(app: FastifyInstance): void {
           year: p.year,
           posterUrl: p.posterUrl,
           ratingKey: libraryIndex.get(`tmdb:${p.tmdbId}`)?.ratingKey,
+          unreleased: !p.releaseDate || p.releaseDate > today,
         }));
 
       return {

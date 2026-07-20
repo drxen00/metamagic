@@ -105,6 +105,8 @@ export interface ResolvedTitle {
   title: string;
   year?: number;
   posterUrl?: string;
+  /** ISO date (YYYY-MM-DD) when known */
+  releaseDate?: string;
 }
 
 interface TmdbTitleResponse {
@@ -129,6 +131,7 @@ function toResolved(r: TmdbTitleResponse | undefined): ResolvedTitle | undefined
     title,
     year: date ? Number(date.slice(0, 4)) || undefined : undefined,
     posterUrl: r.poster_path ? `${IMG_PREVIEW}${r.poster_path}` : undefined,
+    releaseDate: date || undefined,
   };
 }
 
@@ -180,8 +183,6 @@ export async function getTmdbCollectionParts(
       const resolved = toResolved(p);
       return resolved ? { ...resolved, tmdbId: String(p.id) } : undefined;
     })
-    .filter((p): p is ResolvedTitle & { tmdbId: string } => !!p)
-    // Unreleased/undated entries are usually announced-only placeholders.
-    .filter((p) => p.year !== undefined);
+    .filter((p): p is ResolvedTitle & { tmdbId: string } => !!p);
   return { id: collectionId, name: data.name, parts };
 }
