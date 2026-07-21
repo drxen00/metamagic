@@ -278,8 +278,19 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       };
       if (item.type === "collection") {
         if (getAppSetting("tmdb_api_key")) {
-          const collectionId = await searchTmdbCollection(cleaned).catch(() => undefined);
-          if (collectionId) links.mediuxUrl = `https://mediux.pro/collections/${collectionId}`;
+          // Use the same accurate resolver as "missing from collection":
+          // a user pin wins, else infer from the collection's own movies,
+          // else fall back to title search. MediUX /collections/{id} keys on
+          // the TMDb collection id.
+          const children = await client.collectionChildren(req.params.ratingKey).catch(() => []);
+          const resolved = await resolveTmdbCollection(
+            req.params.ratingKey,
+            item.title,
+            children,
+          ).catch(() => undefined);
+          if (resolved) {
+            links.mediuxUrl = `https://mediux.pro/collections/${resolved.id}`;
+          }
         }
       } else if (item.tmdbId) {
         links.mediuxUrl = `https://mediux.pro/${item.type === "show" ? "shows" : "movies"}/${item.tmdbId}`;
