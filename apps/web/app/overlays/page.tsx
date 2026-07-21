@@ -8,6 +8,7 @@ import {
   Plus,
   RefreshCw,
   Save,
+  Search,
   Trash2,
   Wand2,
   X,
@@ -22,7 +23,7 @@ import type {
   OverlayStatus,
 } from "@metamagic/shared";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, imageUrl } from "@/lib/utils";
 import { Topbar } from "@/components/shell/topbar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, NativeSelect } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ColorPicker } from "@/components/ui/color-picker";
 import { JobLog } from "@/components/rules/job-log";
 
 const BADGE_TYPES: { id: BadgeType; label: string; hint: string }[] = [
@@ -74,6 +76,9 @@ export default function OverlaysPage() {
   const [confirmRestore, setConfirmRestore] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = React.useState(false);
+  const [pickedItem, setPickedItem] = React.useState<MediaItem | null>(null);
+  const [previewSearch, setPreviewSearch] = React.useState("");
+  const [debouncedSearch, setDebouncedSearch] = React.useState("");
 
   const { data: sections } = useQuery({
     queryKey: ["sections"],
@@ -101,16 +106,33 @@ export default function OverlaysPage() {
     retry: false,
   });
 
-  // Re-render the preview whenever the design or sample changes
+  // The item shown in the preview: whatever the user picked, else the sample.
+  const previewItem = pickedItem ?? sample ?? null;
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(previewSearch), 300);
+    return () => clearTimeout(t);
+  }, [previewSearch]);
+
+  const { data: searchResults } = useQuery({
+    queryKey: ["overlay-preview-search", sectionId, debouncedSearch],
+    queryFn: () =>
+      api<{ items: MediaItem[] }>(
+        `/api/library/sections/${sectionId}/items?search=${encodeURIComponent(debouncedSearch)}&limit=8`,
+      ),
+    enabled: !!sectionId && debouncedSearch.trim().length > 1,
+  });
+
+  // Re-render the preview whenever the design or chosen item changes
   const renderPreview = React.useCallback(async () => {
-    if (!sample?.ratingKey) {
-      setError("No poster to preview — is a library connected?");
+    if (!previewItem?.ratingKey) {
+      setError("No poster to preview — pick an item or connect a library.");
       return;
     }
     setError(null);
     setPreviewLoading(true);
     try {
-      const res = await fetch(`/api/overlays/preview?ratingKey=${sample.ratingKey}`, {
+      const res = await fetch(`/api/overlays/preview?ratingKey=${previewItem.ratingKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, badges }),
@@ -131,7 +153,7 @@ export default function OverlaysPage() {
     } finally {
       setPreviewLoading(false);
     }
-  }, [sample?.ratingKey, name, badges]);
+  }, [previewItem?.ratingKey, name, badges]);
 
   React.useEffect(() => {
     const t = setTimeout(renderPreview, 400);
@@ -349,23 +371,9 @@ export default function OverlaysPage() {
                             aria-label={`Color ${c}`}
                           />
                         ))}
-                        {/* Native color wheel for full picking */}
-                        <label
-                          className="relative h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-full border border-border"
-                          style={{ backgroundColor: badge.color }}
-                          title="Open color picker"
-                        >
-                          <input
-                            type="color"
-                            value={/^#[0-9a-fA-F]{6}$/.test(badge.color) ? badge.color : "#111827"}
-                            onChange={(e) => updateBadge(i, { color: e.target.value })}
-                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-                          />
-                        </label>
-                        <Input
+                        <ColorPicker
                           value={badge.color}
-                          onChange={(e) => updateBadge(i, { color: e.target.value })}
-                          className="h-7 w-28 font-mono text-xs"
+                          onChange={(color) => updateBadge(i, { color })}
                         />
                       </div>
                     </div>
@@ -477,18 +485,70 @@ export default function OverlaysPage() {
                 </Button>
               </CardTitle>
               <CardDescription>
-                {sample ? sample.title : "Rendered on a real poster from your library"}
+                Previewing on{" "}
+                <span className="text-foreground/80">{previewItem?.title ?? "…"}</span>
               </CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-3">
+              {/* Pick which item to preview on */}
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  placeholder="Preview on a different title…"
+                  value={previewSearch}
+                  onChange={(e) => setPreviewSearch(e.target.value)}
+                  className="pl-9"
+                />
+                {debouncedSearch.trim().length > 1 && searchResults && (
+                  <div className="absolute z-20 mt-1 max-h-56 w-full space-y-0.5 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+                    {searchResults.items.length === 0 ? (
+                      <p className="px-2 py-1.5 text-sm text-muted-foreground">No matches.</p>
+                    ) : (
+                      searchResults.items.map((it) => (
+                        <button
+                          key={it.ratingKey}
+                          onClick={() => {
+                            setPickedItem(it);
+                            setPreviewSearch("");
+                            setDebouncedSearch("");
+                          }}
+                          className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-secondary/60"
+                        >
+                          {it.thumb && (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={imageUrl(it.thumb, 40, 60)}
+                              alt=""
+                              className="h-9 w-6 rounded object-cover"
+                            />
+                          )}
+                          <span className="flex-1 truncate">
+                            {it.title}
+                            {it.year ? <span className="text-muted-foreground"> ({it.year})</span> : null}
+                          </span>
+                        </button>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+
               {error ? (
-                <p className="text-sm text-destructive">{error}</p>
+                <div className="space-y-2">
+                  <p className="text-sm text-destructive">{error}</p>
+                  <Button size="sm" variant="outline" onClick={() => void renderPreview()}>
+                    <RefreshCw className="h-3.5 w-3.5" /> Retry
+                  </Button>
+                </div>
               ) : previewSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={previewSrc}
                   alt="Overlay preview"
-                  className="w-full rounded-lg border border-border/60"
+                  className={cn(
+                    "w-full rounded-lg border border-border/60 transition-opacity",
+                    previewLoading && "opacity-50",
+                  )}
                 />
               ) : (
                 <Skeleton className="aspect-[2/3] w-full rounded-lg" />

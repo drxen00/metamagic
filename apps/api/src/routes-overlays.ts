@@ -59,7 +59,7 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
 
       const client = requirePlex();
       const item = await client.item(ratingKey);
-      const { buffer } = await loadOriginalPoster(client, item);
+      const { buffer } = await loadOriginalPoster(client, item, false);
       const composed = await compositePoster(buffer, { id: 0, ...input }, item);
 
       reply.header("Content-Type", "image/jpeg");

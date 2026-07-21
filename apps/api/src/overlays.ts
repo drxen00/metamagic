@@ -175,6 +175,7 @@ function originalPath(ratingKey: string): string {
 export async function loadOriginalPoster(
   client: PlexClient,
   item: MediaItem,
+  persist = true,
 ): Promise<{ buffer: Buffer; contentType: string }> {
   const saved = getOriginalArtwork(item.ratingKey);
   if (saved) {
@@ -188,14 +189,23 @@ export async function loadOriginalPoster(
 
   if (!item.thumb) throw new PlexError(`${item.title} has no poster to overlay.`, 400);
   const url = client.imageUrl(item.thumb, POSTER_WIDTH, POSTER_HEIGHT);
-  const res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
-  if (!res.ok) throw new PlexError(`Could not download the poster for ${item.title}.`, 502);
+  let res: Response;
+  try {
+    res = await fetch(url, { signal: AbortSignal.timeout(30_000) });
+  } catch {
+    throw new PlexError(`Could not reach Plex to download the poster for ${item.title}.`, 502);
+  }
+  if (!res.ok) throw new PlexError(`Plex returned ${res.status} for ${item.title}'s poster.`, 502);
   const buffer = Buffer.from(await res.arrayBuffer());
   const contentType = res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
 
-  const fileName = `${item.ratingKey}.bin`;
-  fs.writeFileSync(originalPath(item.ratingKey), buffer);
-  recordOriginalArtwork(item.ratingKey, fileName, contentType);
+  // Only persist as the restorable "original" during a real apply — previewing
+  // must not create backups (it would inflate the restore count).
+  if (persist) {
+    const fileName = `${item.ratingKey}.bin`;
+    fs.writeFileSync(originalPath(item.ratingKey), buffer);
+    recordOriginalArtwork(item.ratingKey, fileName, contentType);
+  }
   return { buffer, contentType };
 }
 
