@@ -206,7 +206,7 @@ export function PosterPicker({
         </div>
 
         {tab === "yaml" ? (
-          <div className="mx-auto max-h-[74vh] w-full max-w-3xl overflow-y-auto py-2 pr-1">
+          <div className="mx-auto max-h-[74vh] w-full max-w-3xl overflow-y-auto px-1 py-2">
             <p className="mb-3 text-sm text-muted-foreground">
               Paste the “Copy YAML” block from a MediUX set page — it applies to everything it
               matches in your libraries (shows, seasons, episode cards, movies), not just this

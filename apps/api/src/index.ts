@@ -21,6 +21,17 @@ import { MediuxError } from "./mediux.js";
 
 const app = Fastify({ logger: { level: "info" }, bodyLimit: 20 * 1024 * 1024 });
 
+// Keep the process alive no matter what. A single stray rejection (a flaky
+// Plex/TMDb/MediUX fetch, a background job, sharp) must never kill the API —
+// the container entrypoint exits when this process dies, taking the whole app
+// down until a manual restart. Log and carry on instead.
+process.on("unhandledRejection", (reason) => {
+  app.log.error({ reason }, "unhandled promise rejection (ignored)");
+});
+process.on("uncaughtException", (err) => {
+  app.log.error({ err }, "uncaught exception (ignored)");
+});
+
 await app.register(cookie);
 
 // Raw image bodies for poster uploads

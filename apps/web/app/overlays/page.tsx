@@ -73,6 +73,7 @@ export default function OverlaysPage() {
   const [confirmApply, setConfirmApply] = React.useState(false);
   const [confirmRestore, setConfirmRestore] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = React.useState(false);
 
   const { data: sections } = useQuery({
     queryKey: ["sections"],
@@ -102,13 +103,18 @@ export default function OverlaysPage() {
 
   // Re-render the preview whenever the design or sample changes
   const renderPreview = React.useCallback(async () => {
-    if (!sample?.ratingKey) return;
+    if (!sample?.ratingKey) {
+      setError("No poster to preview — is a library connected?");
+      return;
+    }
     setError(null);
+    setPreviewLoading(true);
     try {
       const res = await fetch(`/api/overlays/preview?ratingKey=${sample.ratingKey}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, badges }),
+        signal: AbortSignal.timeout(30_000),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -120,7 +126,10 @@ export default function OverlaysPage() {
         return URL.createObjectURL(blob);
       });
     } catch (e) {
-      setError((e as Error).message);
+      const timedOut = e instanceof DOMException && e.name === "TimeoutError";
+      setError(timedOut ? "Preview timed out — the server may be busy." : (e as Error).message);
+    } finally {
+      setPreviewLoading(false);
     }
   }, [sample?.ratingKey, name, badges]);
 
@@ -281,16 +290,32 @@ export default function OverlaysPage() {
                         </NativeSelect>
                       </div>
                       <div className="space-y-1.5">
-                        <Label className="text-xs">Size — {badge.scale.toFixed(2)}×</Label>
-                        <input
-                          type="range"
-                          min={0.5}
-                          max={2}
-                          step={0.05}
-                          value={badge.scale}
-                          onChange={(e) => updateBadge(i, { scale: Number(e.target.value) })}
-                          className="w-full accent-[hsl(var(--primary))]"
-                        />
+                        <Label className="text-xs">Size</Label>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="range"
+                            min={0.5}
+                            max={2}
+                            step={0.05}
+                            value={badge.scale}
+                            onChange={(e) => updateBadge(i, { scale: Number(e.target.value) })}
+                            className="flex-1 accent-[hsl(var(--primary))]"
+                          />
+                          <Input
+                            type="number"
+                            min={0.5}
+                            max={2}
+                            step={0.05}
+                            value={badge.scale}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (!Number.isNaN(v))
+                                updateBadge(i, { scale: Math.min(2, Math.max(0.5, v)) });
+                            }}
+                            className="h-7 w-20 text-xs"
+                          />
+                          <span className="text-xs text-muted-foreground">×</span>
+                        </div>
                       </div>
                     </div>
 
@@ -308,7 +333,7 @@ export default function OverlaysPage() {
                     )}
 
                     <div className="space-y-1.5">
-                      <Label className="text-xs">Colour</Label>
+                      <Label className="text-xs">Color</Label>
                       <div className="flex flex-wrap items-center gap-1.5">
                         {PRESET_COLORS.map((c) => (
                           <button
@@ -321,9 +346,22 @@ export default function OverlaysPage() {
                                 ? "scale-110 border-primary ring-2 ring-primary"
                                 : "border-border",
                             )}
-                            aria-label={`Colour ${c}`}
+                            aria-label={`Color ${c}`}
                           />
                         ))}
+                        {/* Native color wheel for full picking */}
+                        <label
+                          className="relative h-7 w-7 shrink-0 cursor-pointer overflow-hidden rounded-full border border-border"
+                          style={{ backgroundColor: badge.color }}
+                          title="Open color picker"
+                        >
+                          <input
+                            type="color"
+                            value={/^#[0-9a-fA-F]{6}$/.test(badge.color) ? badge.color : "#111827"}
+                            onChange={(e) => updateBadge(i, { color: e.target.value })}
+                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          />
+                        </label>
                         <Input
                           value={badge.color}
                           onChange={(e) => updateBadge(i, { color: e.target.value })}
@@ -428,8 +466,14 @@ export default function OverlaysPage() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center justify-between gap-2 text-base">
                 Live preview
-                <Button size="sm" variant="ghost" onClick={() => void renderPreview()}>
-                  <RefreshCw className="h-3.5 w-3.5" />
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={previewLoading}
+                  onClick={() => void renderPreview()}
+                  title="Refresh preview"
+                >
+                  <RefreshCw className={cn("h-3.5 w-3.5", previewLoading && "animate-spin")} />
                 </Button>
               </CardTitle>
               <CardDescription>

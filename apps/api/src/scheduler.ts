@@ -46,10 +46,26 @@ export function startScheduler(log: FastifyBaseLogger): void {
     }
   };
 
+  // Never let a slow tick overlap the next one — concurrent full-library scans
+  // would pile up connections and starve the API.
+  let ticking = false;
+  const runTick = async () => {
+    if (ticking) {
+      log.warn("previous scheduler tick still running, skipping this one");
+      return;
+    }
+    ticking = true;
+    try {
+      await tick();
+    } finally {
+      ticking = false;
+    }
+  };
+
   // A short delay so the first tick doesn't race container startup.
   setTimeout(() => {
-    void tick();
-    setInterval(() => void tick(), TICK_MS);
+    void runTick();
+    setInterval(() => void runTick(), TICK_MS);
   }, 30_000).unref?.();
 
   log.info("automation scheduler started (15 min tick)");
