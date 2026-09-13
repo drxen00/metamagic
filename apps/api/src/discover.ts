@@ -9,6 +9,8 @@ interface Bucket {
   name: string;
   owned: DiscoveredCollection["owned"];
   sectionId: string;
+  /** How many of the owned films sit in each existing Plex collection (by normalised title). */
+  collectionVotes: Map<string, number>;
 }
 
 function normalize(name: string): string {
@@ -21,8 +23,15 @@ function normalize(name: string): string {
 
 /**
  * Find TMDb collections the user could create: walk the movie libraries, ask
- * TMDb (cached) which collection each film belongs to, and keep the franchises
- * where 2+ films are owned but no Plex collection exists yet.
+ * TMDb (cached) which collection each film belongs to, and group the franchises
+ * where 2+ films are owned.
+ *
+ * A franchise is only *recommended* when its films aren't already grouped in a
+ * Plex collection. We detect that by membership (which existing collection the
+ * owned films actually live in), not just by name — a "Batman (Nolan)"
+ * collection should stop us re-suggesting "The Dark Knight Collection". Ones
+ * that already exist are still returned, flagged with `existing`, so the UI can
+ * show "you already have this" instead of a Create button.
  */
 export async function discoverCollections(
   client: PlexClient,
@@ -33,7 +42,10 @@ export async function discoverCollections(
   }
 
   const existing = await client.collections();
-  const existingNames = new Set(existing.map((c) => normalize(c.title)));
+  // Normalised title → the Plex collection, for resolving membership back to a
+  // real collection (item memberships only carry the collection's title).
+  const existingByNorm = new Map<string, (typeof existing)[number]>();
+  for (const c of existing) existingByNorm.set(normalize(c.title), c);
   const buckets = new Map<number, Bucket>();
 
   const sections = (await client.sections()).filter((s) => s.type === "movie");
@@ -52,6 +64,7 @@ export async function discoverCollections(
           name: belongs.name,
           owned: [],
           sectionId: item.librarySectionId ?? section.id,
+          collectionVotes: new Map<string, number>(),
         };
         bucket.owned.push({
           ratingKey: item.ratingKey,
@@ -59,6 +72,11 @@ export async function discoverCollections(
           year: item.year,
           thumb: item.thumb,
         });
+        // Tally which existing collections this film already belongs to.
+        for (const membership of item.collections ?? []) {
+          const key = normalize(membership.tag);
+          bucket.collectionVotes.set(key, (bucket.collectionVotes.get(key) ?? 0) + 1);
+        }
         buckets.set(belongs.id, bucket);
       }
       offset += limit;
@@ -66,8 +84,30 @@ export async function discoverCollections(
     }
   }
 
+  /** The existing collection these films already live in, if any. */
+  function resolveExisting(b: Bucket): DiscoveredCollection["existing"] {
+    // A collection named after the franchise is the clearest signal.
+    const byName = existingByNorm.get(normalize(b.name));
+    if (byName) {
+      const owned = b.collectionVotes.get(normalize(byName.title)) ?? 0;
+      return { ratingKey: byName.ratingKey, title: byName.title, ownedCount: owned };
+    }
+    // Otherwise, an existing collection that holds a strong majority of the
+    // franchise's owned films (differently named, e.g. a director cut) counts.
+    const need = Math.max(2, Math.ceil(b.owned.length * 0.6));
+    let best: { norm: string; count: number } | undefined;
+    for (const [norm, count] of b.collectionVotes) {
+      if (count >= need && (!best || count > best.count)) best = { norm, count };
+    }
+    if (best) {
+      const coll = existingByNorm.get(best.norm);
+      if (coll) return { ratingKey: coll.ratingKey, title: coll.title, ownedCount: best.count };
+    }
+    return undefined;
+  }
+
   const suggestions = [...buckets.values()]
-    .filter((b) => b.owned.length >= 2 && !existingNames.has(normalize(b.name)))
+    .filter((b) => b.owned.length >= 2)
     .map<DiscoveredCollection>((b) => ({
       tmdbCollectionId: b.id,
       name: b.name,
@@ -75,10 +115,18 @@ export async function discoverCollections(
       owned: b.owned,
       totalParts: b.owned.length,
       sectionId: b.sectionId,
+      existing: resolveExisting(b),
     }))
-    .sort((a, b) => b.owned.length - a.owned.length);
+    // Franchises you can create come first; ones you already have sink below.
+    .sort((a, b) => {
+      if (!!a.existing !== !!b.existing) return a.existing ? 1 : -1;
+      return b.owned.length - a.owned.length;
+    });
 
-  report?.log(`• found ${suggestions.length} collection(s) you could create`);
+  const creatable = suggestions.filter((s) => !s.existing).length;
+  report?.log(
+    `• found ${creatable} collection(s) you could create, ${suggestions.length - creatable} already in a collection`,
+  );
   for (const s of suggestions) report?.push(s);
   return suggestions;
 }

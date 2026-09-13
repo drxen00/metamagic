@@ -117,6 +117,22 @@ function renderBadge(badge: Badge, label: string): RenderedBadge {
   return { svg: Buffer.from(svg), width, height, position: badge.position ?? "bottom-right" };
 }
 
+function clamp(v: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, v));
+}
+
+/** Free placement from normalised (0–1) top-left coords, kept on the poster. */
+function freePlacement(
+  x: number,
+  y: number,
+  badgeWidth: number,
+  badgeHeight: number,
+): { left: number; top: number } {
+  const left = clamp(Math.round(x * POSTER_WIDTH), 0, Math.max(0, POSTER_WIDTH - badgeWidth));
+  const top = clamp(Math.round(y * POSTER_HEIGHT), 0, Math.max(0, POSTER_HEIGHT - badgeHeight));
+  return { left, top };
+}
+
 function placement(
   position: BadgePosition,
   badgeWidth: number,
@@ -152,10 +168,16 @@ export async function compositePoster(
     const label = badgeLabel(badge, item);
     if (!label) continue;
     const rendered = renderBadge(badge, label);
-    const index = perPosition.get(rendered.position) ?? 0;
-    perPosition.set(rendered.position, index + 1);
-    const { left, top } = placement(rendered.position, rendered.width, rendered.height, index);
-    layers.push({ input: rendered.svg, left, top });
+    // A dragged badge carries free (x, y) coords that override the preset corner.
+    const placed =
+      typeof badge.x === "number" && typeof badge.y === "number"
+        ? freePlacement(badge.x, badge.y, rendered.width, rendered.height)
+        : (() => {
+            const index = perPosition.get(rendered.position) ?? 0;
+            perPosition.set(rendered.position, index + 1);
+            return placement(rendered.position, rendered.width, rendered.height, index);
+          })();
+    layers.push({ input: rendered.svg, left: placed.left, top: placed.top });
   }
 
   return base.composite(layers).jpeg({ quality: 92 }).toBuffer();
@@ -207,6 +229,22 @@ export async function loadOriginalPoster(
     recordOriginalArtwork(item.ratingKey, fileName, contentType);
   }
   return { buffer, contentType };
+}
+
+/**
+ * Drop the stored "original" poster backup for an item, without touching Plex.
+ *
+ * Call this whenever the user sets a new poster through MetaMagic: the old
+ * backup no longer reflects what's on the item, so it must not be reused as the
+ * clean base for previews or re-applied overlays (that's what made the live
+ * preview keep showing a stale poster). The next overlay will re-capture the
+ * new poster as the original.
+ */
+export function forgetOriginalPoster(ratingKey: string): void {
+  const saved = getOriginalArtwork(ratingKey);
+  if (!saved) return;
+  fs.rmSync(path.join(ORIGINALS_DIR, saved.fileName), { force: true });
+  deleteOriginalArtwork(ratingKey);
 }
 
 /** Restore the stored original poster and forget the backup. */

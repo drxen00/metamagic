@@ -5,6 +5,7 @@ import { EDIT_TYPE_IDS } from "./plex.js";
 import { fetchRemoteImage } from "./remote-image.js";
 import { recordArtworkSource } from "./db.js";
 import { resolveTitleById } from "./tmdb.js";
+import { forgetOriginalPoster } from "./overlays.js";
 
 /** MediUX "Copy YAML" embeds the set link in a comment — pull it out for provenance. */
 export function extractSetUrl(yamlText: string): { url?: string; label: string } {
@@ -246,6 +247,8 @@ async function applyImage(
 ): Promise<void> {
   const img = await fetchRemoteImage(url);
   await client.uploadArtwork(ratingKey, kind, img.buffer, img.contentType);
+  // A new poster replaces whatever overlay backup we had for this item.
+  if (kind === "poster") forgetOriginalPoster(ratingKey);
   if (sectionId) await client.lockArtwork(sectionId, typeId, ratingKey, kind);
 }
 

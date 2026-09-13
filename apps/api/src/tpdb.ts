@@ -4,6 +4,7 @@ import type { ProgressReporter } from "./mediux.js";
 import { EDIT_TYPE_IDS, PlexError } from "./plex.js";
 import { fetchRemoteImage } from "./remote-image.js";
 import { recordArtworkSource } from "./db.js";
+import { forgetOriginalPoster } from "./overlays.js";
 
 const BROWSER_HEADERS = {
   "User-Agent":
@@ -93,6 +94,7 @@ export async function applyTpdbSetToCollection(
   const applyPoster = async (ratingKey: string, posterId: string, typeId: number, sectionId?: string) => {
     const img = await fetchRemoteImage(`https://theposterdb.com/api/assets/${posterId}`);
     await client.uploadArtwork(ratingKey, "poster", img.buffer, img.contentType);
+    forgetOriginalPoster(ratingKey);
     if (sectionId) await client.lockArtwork(sectionId, typeId, ratingKey, "poster");
     recordArtworkSource(ratingKey, "poster", "tpdb", `ThePosterDB set ${setId}`, pageUrl);
   };

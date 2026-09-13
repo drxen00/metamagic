@@ -64,6 +64,91 @@ function newBadge(type: BadgeType): BadgeSpec {
   };
 }
 
+// Poster margins as fractions of the 1000×1500 canvas the server composites on.
+const MARGIN_X = 34 / 1000;
+const MARGIN_Y = 34 / 1500;
+
+/** Approximate normalised top-left for a preset-positioned badge (dragging makes it exact). */
+function presetAnchor(position: BadgePosition, stackIndex: number): { x: number; y: number } {
+  const estW = 0.2;
+  const estH = 0.05;
+  const stack = stackIndex * 0.07;
+  const x = position.endsWith("left")
+    ? MARGIN_X
+    : position.endsWith("right")
+      ? 1 - MARGIN_X - estW
+      : 0.5 - estW / 2;
+  const y = position.startsWith("top") ? MARGIN_Y + stack : 1 - MARGIN_Y - estH - stack;
+  return { x, y };
+}
+
+/**
+ * A layer of draggable chips over the preview poster — one per badge. Dragging a
+ * chip writes normalised (x, y) coords onto the badge, which the server honours
+ * when it re-renders the composite. Chips sit at the badge's current spot:
+ * its free coords when set, otherwise an estimate of its preset corner.
+ */
+function DraggableBadges({
+  badges,
+  onMove,
+}: {
+  badges: BadgeSpec[];
+  onMove: (index: number, x: number, y: number) => void;
+}) {
+  const layerRef = React.useRef<HTMLDivElement>(null);
+  const perPosition: Record<string, number> = {};
+
+  return (
+    <div ref={layerRef} className="pointer-events-none absolute inset-0">
+      {badges.map((b, i) => {
+        const stackIndex = perPosition[b.position] ?? 0;
+        perPosition[b.position] = stackIndex + 1;
+        const anchor =
+          typeof b.x === "number" && typeof b.y === "number"
+            ? { x: b.x, y: b.y }
+            : presetAnchor(b.position, stackIndex);
+
+        const startDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
+          e.preventDefault();
+          const layer = layerRef.current;
+          if (!layer) return;
+          const layerRect = layer.getBoundingClientRect();
+          const handleRect = e.currentTarget.getBoundingClientRect();
+          const grabX = e.clientX - handleRect.left;
+          const grabY = e.clientY - handleRect.top;
+          const maxX = 1 - handleRect.width / layerRect.width;
+          const maxY = 1 - handleRect.height / layerRect.height;
+
+          const move = (ev: PointerEvent) => {
+            const nx = (ev.clientX - grabX - layerRect.left) / layerRect.width;
+            const ny = (ev.clientY - grabY - layerRect.top) / layerRect.height;
+            onMove(i, Math.min(Math.max(nx, 0), Math.max(0, maxX)), Math.min(Math.max(ny, 0), Math.max(0, maxY)));
+          };
+          const up = () => {
+            window.removeEventListener("pointermove", move);
+            window.removeEventListener("pointerup", up);
+          };
+          window.addEventListener("pointermove", move);
+          window.addEventListener("pointerup", up);
+        };
+
+        return (
+          <button
+            key={i}
+            type="button"
+            onPointerDown={startDrag}
+            title="Drag to position this badge"
+            className="pointer-events-auto absolute cursor-grab touch-none select-none rounded-md border border-white/70 bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-md ring-1 ring-black/40 backdrop-blur-sm active:cursor-grabbing"
+            style={{ left: `${anchor.x * 100}%`, top: `${anchor.y * 100}%` }}
+          >
+            {BADGE_TYPES.find((t) => t.id === b.type)?.label ?? b.type}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function OverlaysPage() {
   const qc = useQueryClient();
   const [name, setName] = React.useState("My overlay");
@@ -301,7 +386,12 @@ export default function OverlaysPage() {
                           className="w-full"
                           value={badge.position}
                           onChange={(e) =>
-                            updateBadge(i, { position: e.target.value as BadgePosition })
+                            // Picking a corner clears any dragged coords so it snaps back.
+                            updateBadge(i, {
+                              position: e.target.value as BadgePosition,
+                              x: undefined,
+                              y: undefined,
+                            })
                           }
                         >
                           {POSITIONS.map((p) => (
@@ -541,15 +631,27 @@ export default function OverlaysPage() {
                   </Button>
                 </div>
               ) : previewSrc ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={previewSrc}
-                  alt="Overlay preview"
-                  className={cn(
-                    "w-full rounded-lg border border-border/60 transition-opacity",
-                    previewLoading && "opacity-50",
-                  )}
-                />
+                <>
+                  <div className="relative">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewSrc}
+                      alt="Overlay preview"
+                      className={cn(
+                        "w-full rounded-lg border border-border/60 transition-opacity",
+                        previewLoading && "opacity-50",
+                      )}
+                    />
+                    <DraggableBadges
+                      badges={badges}
+                      onMove={(index, x, y) => updateBadge(index, { x, y })}
+                    />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Drag a badge on the poster to place it exactly. Changing its{" "}
+                    <span className="text-foreground/80">Position</span> snaps it back to a corner.
+                  </p>
+                </>
               ) : (
                 <Skeleton className="aspect-[2/3] w-full rounded-lg" />
               )}

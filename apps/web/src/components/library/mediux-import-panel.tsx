@@ -10,7 +10,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 /** Paste-YAML → preview → apply flow with live job transcript. */
-export function MediuxImportPanel({ rows = 6 }: { rows?: number }) {
+export function MediuxImportPanel({
+  rows = 6,
+  onDone,
+}: {
+  rows?: number;
+  /** When set, a "Done" button appears once an apply finishes (e.g. to close the poster picker). */
+  onDone?: () => void;
+}) {
   const qc = useQueryClient();
   const [yamlText, setYamlText] = React.useState("");
   const [previewResults, setPreviewResults] = React.useState<MediuxMatch[] | null>(null);
@@ -227,6 +234,11 @@ export function MediuxImportPanel({ rows = 6 }: { rows?: number }) {
         >
           Apply to library
         </Button>
+        {onDone && mode === "apply" && jobFinished && (
+          <Button variant="secondary" className="ml-auto" onClick={onDone}>
+            Done
+          </Button>
+        )}
       </div>
     </div>
   );

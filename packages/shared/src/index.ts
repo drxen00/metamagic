@@ -444,6 +444,13 @@ export const badgeSchema = z.object({
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#111827"),
   /** For type "text": the literal label. For "new": days threshold as text. */
   value: z.string().optional(),
+  /**
+   * Free placement as a fraction of the poster (0–1, top-left anchor). When both
+   * are set they override `position` — this is what dragging a badge in the live
+   * preview records. Leave undefined to keep the six-corner preset placement.
+   */
+  x: z.number().min(0).max(1).optional(),
+  y: z.number().min(0).max(1).optional(),
 });
 export type Badge = z.infer<typeof badgeSchema>;
 
@@ -480,6 +487,12 @@ export interface DiscoveredCollection {
   owned: { ratingKey: string; title: string; year?: number; thumb?: string }[];
   totalParts: number;
   sectionId: string;
+  /**
+   * Set when the owned films already live in a Plex collection (matched by
+   * membership, not just name). The UI shows "already have this" instead of a
+   * Create button so franchises you've collected aren't recommended again.
+   */
+  existing?: { ratingKey: string; title: string; ownedCount: number };
 }
 
 // ---------- API error envelope ----------
