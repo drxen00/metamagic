@@ -131,6 +131,27 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     const sections = await client.sections();
     const section = sections.find((s) => s.id === sectionId);
     if (!section) throw new PlexError(`Library section ${sectionId} not found`, 404);
+
+    // Don't create a duplicate: if every chosen film already shares one existing
+    // collection, say so rather than making a second one with the same members.
+    const norm = (s: string) =>
+      s.toLowerCase().replace(/\s+collection\s*$/, "").replace(/[^a-z0-9]+/g, " ").trim();
+    let shared: Set<string> | undefined;
+    for (const rk of ratingKeys) {
+      const it = await client.item(rk).catch(() => undefined);
+      const tags = new Set((it?.collections ?? []).map((c) => norm(c.tag)));
+      shared = shared ? new Set([...shared].filter((t) => tags.has(t))) : tags;
+      if (shared.size === 0) break;
+    }
+    if (shared && shared.size > 0) {
+      const match = (await client.collections(sectionId)).find((c) => shared!.has(norm(c.title)));
+      if (match) {
+        return reply.status(409).send({
+          error: `Those films are already in the “${match.title}” collection.`,
+        });
+      }
+    }
+
     return client.createCollection(sectionId, section.type, title, ratingKeys);
   });
 

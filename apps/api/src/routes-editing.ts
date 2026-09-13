@@ -42,6 +42,7 @@ import { applyMediux, previewMediux } from "./mediux.js";
 import { fetchRemoteImage } from "./remote-image.js";
 import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
+import { forgetOriginalPoster } from "./overlays.js";
 
 function editTypeId(itemType: string): number {
   const id = EDIT_TYPE_IDS[itemType];
@@ -316,6 +317,9 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       await client.setArtwork(req.params.ratingKey, input.kind, input.url);
       recordArtworkSource(req.params.ratingKey, input.kind, "plex", "Plex artwork");
     }
+    // The item now shows a new poster — invalidate any stale overlay backup so
+    // previews and re-applied overlays build on the poster the user just chose.
+    if (input.kind === "poster") forgetOriginalPoster(req.params.ratingKey);
     if (item.librarySectionId) {
       await client.lockArtwork(
         item.librarySectionId,
@@ -344,6 +348,7 @@ export function registerEditingRoutes(app: FastifyInstance): void {
         req.headers["content-type"] ?? "image/jpeg",
       );
       recordArtworkSource(req.params.ratingKey, kind, "upload", "Uploaded file");
+      if (kind === "poster") forgetOriginalPoster(req.params.ratingKey);
       if (item.librarySectionId) {
         await client.lockArtwork(
           item.librarySectionId,
