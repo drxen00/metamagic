@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
-import type { Badge, BadgePosition, MediaItem, OverlayPreset } from "@metamagic/shared";
+import type { Badge, BadgeBox, BadgePosition, MediaItem, OverlayPreset } from "@metamagic/shared";
 import { CONFIG_DIR } from "./env.js";
 import { PlexError, EDIT_TYPE_IDS } from "./plex.js";
 import type { PlexClient } from "./plex.js";
@@ -153,6 +153,48 @@ function placement(
   return { left: Math.max(0, left), top: Math.max(0, top) };
 }
 
+interface PlacedBadge {
+  /** Index into preset.badges — lets the UI map a dragged box back to its badge. */
+  index: number;
+  label: string;
+  rendered: RenderedBadge;
+  left: number;
+  top: number;
+}
+
+/** Resolve every applicable badge to a concrete pixel box on the 1000×1500 canvas. */
+function placeBadges(preset: OverlayPreset, item: MediaItem): PlacedBadge[] {
+  const perPosition = new Map<BadgePosition, number>();
+  const placed: PlacedBadge[] = [];
+  preset.badges.forEach((badge, index) => {
+    const label = badgeLabel(badge, item);
+    if (!label) return;
+    const rendered = renderBadge(badge, label);
+    // A dragged badge carries free (x, y) coords that override the preset corner.
+    const pos =
+      typeof badge.x === "number" && typeof badge.y === "number"
+        ? freePlacement(badge.x, badge.y, rendered.width, rendered.height)
+        : (() => {
+            const stack = perPosition.get(rendered.position) ?? 0;
+            perPosition.set(rendered.position, stack + 1);
+            return placement(rendered.position, rendered.width, rendered.height, stack);
+          })();
+    placed.push({ index, label, rendered, left: pos.left, top: pos.top });
+  });
+  return placed;
+}
+
+export function badgeLayout(preset: OverlayPreset, item: MediaItem): BadgeBox[] {
+  return placeBadges(preset, item).map((p) => ({
+    index: p.index,
+    label: p.label,
+    x: p.left / POSTER_WIDTH,
+    y: p.top / POSTER_HEIGHT,
+    w: p.rendered.width / POSTER_WIDTH,
+    h: p.rendered.height / POSTER_HEIGHT,
+  }));
+}
+
 /** Composite a preset's badges onto poster bytes. Pure — no Plex, no disk. */
 export async function compositePoster(
   original: Buffer,
@@ -160,26 +202,11 @@ export async function compositePoster(
   item: MediaItem,
 ): Promise<Buffer> {
   const base = sharp(original).resize(POSTER_WIDTH, POSTER_HEIGHT, { fit: "cover" });
-
-  const perPosition = new Map<BadgePosition, number>();
-  const layers: sharp.OverlayOptions[] = [];
-
-  for (const badge of preset.badges) {
-    const label = badgeLabel(badge, item);
-    if (!label) continue;
-    const rendered = renderBadge(badge, label);
-    // A dragged badge carries free (x, y) coords that override the preset corner.
-    const placed =
-      typeof badge.x === "number" && typeof badge.y === "number"
-        ? freePlacement(badge.x, badge.y, rendered.width, rendered.height)
-        : (() => {
-            const index = perPosition.get(rendered.position) ?? 0;
-            perPosition.set(rendered.position, index + 1);
-            return placement(rendered.position, rendered.width, rendered.height, index);
-          })();
-    layers.push({ input: rendered.svg, left: placed.left, top: placed.top });
-  }
-
+  const layers: sharp.OverlayOptions[] = placeBadges(preset, item).map((p) => ({
+    input: p.rendered.svg,
+    left: p.left,
+    top: p.top,
+  }));
   return base.composite(layers).jpeg({ quality: 92 }).toBuffer();
 }
 

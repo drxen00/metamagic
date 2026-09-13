@@ -2,13 +2,14 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Loader2, Plus, Sparkles, Wand2 } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Loader2, Plus, Sparkles, Wand2 } from "lucide-react";
 import type { DiscoveredCollection, JobStatus, RuleInput } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { imageUrl } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { RuleDialog } from "./rule-dialog";
 
 /** "Collections you could create" — scans the library for TMDb franchises. */
@@ -52,6 +53,13 @@ export function DiscoverPanel() {
     create.isSuccess && create.variables ? [create.variables.tmdbCollectionId] : [],
   );
 
+  const [minOwned, setMinOwned] = React.useState(2);
+  const [hideExisting, setHideExisting] = React.useState(false);
+  const [collapsed, setCollapsed] = React.useState(false);
+  const visible = suggestions.filter(
+    (d) => d.owned.length >= minOwned && (!hideExisting || !d.existing),
+  );
+
   return (
     <>
       <Card>
@@ -81,8 +89,46 @@ export function DiscoverPanel() {
           </div>
 
           {suggestions.length > 0 && (
-            <div className="space-y-2">
-              {suggestions.map((d) => (
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <button
+                  onClick={() => setCollapsed((c) => !c)}
+                  className="flex items-center gap-1.5 text-sm font-medium"
+                >
+                  {collapsed ? (
+                    <ChevronRight className="h-4 w-4" />
+                  ) : (
+                    <ChevronDown className="h-4 w-4" />
+                  )}
+                  {visible.length} collection{visible.length === 1 ? "" : "s"} shown
+                </button>
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  Min films owned
+                  <Input
+                    type="number"
+                    min={2}
+                    value={minOwned}
+                    onChange={(e) => setMinOwned(Math.max(2, Number(e.target.value) || 2))}
+                    className="h-7 w-16"
+                  />
+                </label>
+                <Button
+                  size="sm"
+                  variant={hideExisting ? "default" : "outline"}
+                  onClick={() => setHideExisting((v) => !v)}
+                >
+                  {hideExisting ? "Showing new only" : "Hide ones I already have"}
+                </Button>
+              </div>
+
+              {!collapsed &&
+                (visible.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No franchises match these filters.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {visible.map((d) => (
                 <div key={d.tmdbCollectionId} className="space-y-1">
                   <div className="flex flex-wrap items-center gap-3 rounded-md border border-border/60 bg-secondary/20 p-2.5">
                     <div className="flex -space-x-3">
@@ -183,7 +229,9 @@ export function DiscoverPanel() {
                       </p>
                     )}
                 </div>
-              ))}
+                    ))}
+                  </div>
+                  ))}
             </div>
           )}
 

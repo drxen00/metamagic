@@ -8,13 +8,17 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  FolderPlus,
   Hand,
+  History,
+  Image as ImageIcon,
+  Layers,
   Minus,
   Plus,
+  Sparkles,
   X,
-  XCircle,
 } from "lucide-react";
-import type { RuleRun } from "@metamagic/shared";
+import type { ActivityEvent, ActivityKind, RuleRun } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Topbar } from "@/components/shell/topbar";
@@ -44,6 +48,56 @@ const STATUS: Record<string, { label: string; variant: "default" | "secondary" |
   dismissed: { label: "dismissed", variant: "outline" },
 };
 
+const EVENT_META: Record<ActivityKind, { icon: typeof Sparkles; label: string }> = {
+  "mediux-sync": { icon: Sparkles, label: "MediUX auto-sync" },
+  "mediux-apply": { icon: ImageIcon, label: "MediUX set applied" },
+  "overlay-apply": { icon: Layers, label: "Overlay applied" },
+  "overlay-restore": { icon: History, label: "Posters restored" },
+  "collection-created": { icon: FolderPlus, label: "Collection created" },
+  "poster-set": { icon: ImageIcon, label: "Poster changed" },
+};
+
+/** A non-rule automation event (auto-sync, apply, overlay…). */
+function EventCard({ event }: { event: ActivityEvent }) {
+  const meta = EVENT_META[event.kind] ?? { icon: ActivityIcon, label: event.kind };
+  const Icon = meta.icon;
+  return (
+    <Card>
+      <CardContent className="flex flex-wrap items-center gap-3 p-4">
+        <Icon
+          className={cn("h-4 w-4 shrink-0", event.status === "error" ? "text-destructive" : "text-primary")}
+        />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-medium">{event.title}</span>
+            <Badge variant="outline">{meta.label}</Badge>
+            {event.status === "error" && <Badge variant="destructive">failed</Badge>}
+          </div>
+          <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            {event.trigger && (
+              <>
+                <span>{event.trigger}</span>
+                <span aria-hidden>·</span>
+              </>
+            )}
+            {relativeTime(event.ts)}
+            {event.detail && (
+              <>
+                <span aria-hidden>·</span>
+                <span className={cn(event.status === "error" && "text-destructive")}>{event.detail}</span>
+              </>
+            )}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+type TimelineItem =
+  | { ts: number; kind: "run"; run: RuleRun }
+  | { ts: number; kind: "event"; event: ActivityEvent };
+
 export default function ActivityPage() {
   const qc = useQueryClient();
   const [expanded, setExpanded] = React.useState<number | null>(null);
@@ -55,8 +109,15 @@ export default function ActivityPage() {
     refetchInterval: 30_000,
   });
 
+  const { data: events } = useQuery({
+    queryKey: ["activity"],
+    queryFn: () => api<ActivityEvent[]>("/api/activity"),
+    refetchInterval: 30_000,
+  });
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ["runs"] });
+    qc.invalidateQueries({ queryKey: ["activity"] });
     qc.invalidateQueries({ queryKey: ["rules"] });
     qc.invalidateQueries({ queryKey: ["collections"] });
   };
@@ -74,6 +135,11 @@ export default function ActivityPage() {
 
   const pending = runs?.filter((r) => r.status === "pending") ?? [];
 
+  const timeline: TimelineItem[] = [
+    ...(runs ?? []).map((run) => ({ ts: run.startedAt, kind: "run" as const, run })),
+    ...(events ?? []).map((event) => ({ ts: event.ts, kind: "event" as const, event })),
+  ].sort((a, b) => b.ts - a.ts);
+
   return (
     <main>
       <Topbar title="Activity" />
@@ -90,22 +156,23 @@ export default function ActivityPage() {
               <Skeleton key={i} className="h-20 rounded-xl" />
             ))}
           </div>
-        ) : !runs || runs.length === 0 ? (
+        ) : timeline.length === 0 ? (
           <EmptyState
             icon={ActivityIcon}
-            title="Nothing has run yet"
-            description="Once your rules run — manually or on a schedule — every change lands here with its full log."
+            title="Nothing has happened yet"
+            description="Rule runs, MediUX auto-syncs, overlays, and collections you create all land here as they happen."
           />
         ) : (
           <div className="space-y-3">
-            {runs.map((run) => {
+            {timeline.map((item) => {
+              if (item.kind === "event") {
+                return <EventCard key={`e-${item.event.id}`} event={item.event} />;
+              }
+              const run = item.run;
               const status = STATUS[run.status] ?? STATUS.applied;
               const isOpen = expanded === run.id;
               return (
-                <Card
-                  key={run.id}
-                  className={cn(run.status === "pending" && "border-primary/40")}
-                >
+                <Card key={`r-${run.id}`} className={cn(run.status === "pending" && "border-primary/40")}>
                   <CardContent className="p-4">
                     <div className="flex flex-wrap items-center gap-3">
                       <button

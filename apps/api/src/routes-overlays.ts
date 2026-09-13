@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import {
   applyOverlaySchema,
   overlayPresetInputSchema,
+  type BadgeBox,
   type OverlayPreset,
   type OverlayStatus,
 } from "@metamagic/shared";
@@ -15,8 +16,9 @@ import {
   listOverlayPresets,
   updateOverlayPreset,
 } from "./db.js";
-import { applyOverlays, compositePoster, loadOriginalPoster, restoreAll } from "./overlays.js";
+import { applyOverlays, badgeLayout, compositePoster, loadOriginalPoster, restoreAll } from "./overlays.js";
 import { startJob } from "./jobs.js";
+import { recordActivity } from "./activity.js";
 
 export function registerOverlayRoutes(app: FastifyInstance): void {
   // ---------- Presets ----------
@@ -68,6 +70,24 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
     },
   );
 
+  /**
+   * Where each badge lands on the preview item, as poster fractions — the
+   * draggable overlay uses this to draw a real, correctly-sized handle (showing
+   * the actual label, e.g. "4K") over each badge instead of a generic chip.
+   */
+  app.post<{ Querystring: { ratingKey?: string } }>(
+    "/api/overlays/preview-layout",
+    async (req, reply): Promise<{ boxes: BadgeBox[] }> => {
+      const body = req.body as { name?: string; badges?: unknown };
+      const input = overlayPresetInputSchema.parse({ name: body?.name ?? "Preview", badges: body?.badges });
+      const ratingKey = req.query.ratingKey;
+      if (!ratingKey) return reply.status(400).send({ error: "ratingKey is required" }) as never;
+      const client = requirePlex();
+      const item = await client.item(ratingKey);
+      return { boxes: badgeLayout({ id: 0, ...input }, item) };
+    },
+  );
+
   /** A sensible item to preview against — first item of a section. */
   app.get<{ Querystring: { sectionId?: string } }>("/api/overlays/sample", async (req, reply) => {
     const client = requirePlex();
@@ -87,7 +107,14 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
     if (!preset) return reply.status(404).send({ error: "Preset not found" });
     const client = requirePlex();
     const job = startJob<{ ratingKey: string; title: string }>("overlay-apply", async (report) => {
-      await applyOverlays(client, preset, input.sectionId, input.ratingKeys, report);
+      const res = await applyOverlays(client, preset, input.sectionId, input.ratingKeys, report);
+      recordActivity({
+        kind: "overlay-apply",
+        title: `“${preset.name}” overlay`,
+        detail: `${res.applied} overlaid, ${res.skipped} skipped, ${res.failed} failed`,
+        status: res.failed > 0 && res.applied === 0 ? "error" : "ok",
+        trigger: "manual",
+      });
     });
     return { jobId: job.id };
   });
@@ -101,7 +128,14 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
     const keys = listOriginalArtwork().map((o) => o.ratingKey);
     const job = startJob<{ ratingKey: string }>("overlay-restore", async (report) => {
       report.log(`• restoring ${keys.length} original poster(s)`);
-      await restoreAll(client, keys, report);
+      const res = await restoreAll(client, keys, report);
+      recordActivity({
+        kind: "overlay-restore",
+        title: "Restored original posters",
+        detail: `${res.restored} restored${res.failed ? `, ${res.failed} failed` : ""}`,
+        status: res.failed > 0 && res.restored === 0 ? "error" : "ok",
+        trigger: "manual",
+      });
     });
     return { jobId: job.id };
   });

@@ -15,6 +15,7 @@ import type {
   CollectionCompleteness,
   IntegrationsStatus,
   MediaItem,
+  MediuxMatch,
   MissingCollectionItem,
 } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
@@ -43,6 +44,7 @@ import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
 import { rememberMediuxSet } from "./mediux-sync.js";
+import { recordActivity } from "./activity.js";
 
 function editTypeId(itemType: string): number {
   const id = EDIT_TYPE_IDS[itemType];
@@ -355,8 +357,15 @@ export function registerEditingRoutes(app: FastifyInstance): void {
   app.post("/api/mediux/apply", async (req) => {
     const input = mediuxImportSchema.parse(req.body);
     const client = requirePlex();
-    const job = startJob("mediux", async (report) => {
-      await applyMediux(client, input.yaml, report);
+    const job = startJob<MediuxMatch>("mediux", async (report) => {
+      const results = await applyMediux(client, input.yaml, report);
+      const applied = results.filter((r) => r.applied).length;
+      recordActivity({
+        kind: "mediux-apply",
+        title: `MediUX set — ${applied} of ${results.length} applied`,
+        status: "ok",
+        trigger: "manual",
+      });
       // Applied from a collection/show picker → remember it for auto-sync.
       if (input.scopeRatingKey) {
         report.log("• remembering this MediUX set for auto-sync");

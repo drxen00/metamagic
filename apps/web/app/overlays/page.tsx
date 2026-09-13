@@ -3,7 +3,6 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  GripVertical,
   History,
   Layers,
   Plus,
@@ -16,6 +15,7 @@ import {
 } from "lucide-react";
 import type {
   Badge as BadgeSpec,
+  BadgeBox,
   BadgePosition,
   BadgeType,
   LibrarySection,
@@ -65,50 +65,37 @@ function newBadge(type: BadgeType): BadgeSpec {
   };
 }
 
-// Poster margins as fractions of the 1000×1500 canvas the server composites on.
-const MARGIN_X = 34 / 1000;
-const MARGIN_Y = 34 / 1500;
-
-/** Approximate normalised top-left for a preset-positioned badge (dragging makes it exact). */
-function presetAnchor(position: BadgePosition, stackIndex: number): { x: number; y: number } {
-  const estW = 0.2;
-  const estH = 0.05;
-  const stack = stackIndex * 0.07;
-  const x = position.endsWith("left")
-    ? MARGIN_X
-    : position.endsWith("right")
-      ? 1 - MARGIN_X - estW
-      : 0.5 - estW / 2;
-  const y = position.startsWith("top") ? MARGIN_Y + stack : 1 - MARGIN_Y - estH - stack;
-  return { x, y };
-}
-
 /**
- * A layer of draggable chips over the preview poster — one per badge. Dragging a
- * chip writes normalised (x, y) coords onto the badge, which the server honours
- * when it re-renders the composite. Chips sit at the badge's current spot:
- * its free coords when set, otherwise an estimate of its preset corner.
+ * A layer of draggable handles over the preview poster — one per badge that
+ * actually renders on the current item. Each handle is the *real* badge: its
+ * true label (e.g. "4K"), size, and colour, positioned exactly where the server
+ * will burn it. Dragging writes normalised (x, y) onto the badge; the server
+ * honours it on the next render. `boxes` come from /api/overlays/preview-layout.
  */
 function DraggableBadges({
-  badges,
+  boxes,
+  colors,
   onMove,
 }: {
-  badges: BadgeSpec[];
+  boxes: BadgeBox[];
+  /** badge index → colour, so a handle matches the badge it represents. */
+  colors: Record<number, string>;
   onMove: (index: number, x: number, y: number) => void;
 }) {
   const layerRef = React.useRef<HTMLDivElement>(null);
-  const perPosition: Record<string, number> = {};
+  const [layerHeight, setLayerHeight] = React.useState(0);
+
+  React.useEffect(() => {
+    const el = layerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => setLayerHeight(entries[0].contentRect.height));
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   return (
     <div ref={layerRef} className="pointer-events-none absolute inset-0">
-      {badges.map((b, i) => {
-        const stackIndex = perPosition[b.position] ?? 0;
-        perPosition[b.position] = stackIndex + 1;
-        const anchor =
-          typeof b.x === "number" && typeof b.y === "number"
-            ? { x: b.x, y: b.y }
-            : presetAnchor(b.position, stackIndex);
-
+      {boxes.map((box) => {
         const startDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
           e.preventDefault();
           const layer = layerRef.current;
@@ -117,13 +104,17 @@ function DraggableBadges({
           const handleRect = e.currentTarget.getBoundingClientRect();
           const grabX = e.clientX - handleRect.left;
           const grabY = e.clientY - handleRect.top;
-          const maxX = 1 - handleRect.width / layerRect.width;
-          const maxY = 1 - handleRect.height / layerRect.height;
+          const maxX = 1 - box.w;
+          const maxY = 1 - box.h;
 
           const move = (ev: PointerEvent) => {
             const nx = (ev.clientX - grabX - layerRect.left) / layerRect.width;
             const ny = (ev.clientY - grabY - layerRect.top) / layerRect.height;
-            onMove(i, Math.min(Math.max(nx, 0), Math.max(0, maxX)), Math.min(Math.max(ny, 0), Math.max(0, maxY)));
+            onMove(
+              box.index,
+              Math.min(Math.max(nx, 0), Math.max(0, maxX)),
+              Math.min(Math.max(ny, 0), Math.max(0, maxY)),
+            );
           };
           const up = () => {
             window.removeEventListener("pointermove", move);
@@ -133,25 +124,23 @@ function DraggableBadges({
           window.addEventListener("pointerup", up);
         };
 
-        const dragged = typeof b.x === "number" && typeof b.y === "number";
         return (
           <button
-            key={i}
+            key={box.index}
             type="button"
             onPointerDown={startDrag}
             title="Drag to position this badge"
             style={{
-              left: `${anchor.x * 100}%`,
-              top: `${anchor.y * 100}%`,
-              borderColor: b.color,
+              left: `${box.x * 100}%`,
+              top: `${box.y * 100}%`,
+              width: `${box.w * 100}%`,
+              height: `${box.h * 100}%`,
+              backgroundColor: colors[box.index] ?? "#111827",
+              fontSize: `${Math.max(7, Math.min(22, box.h * layerHeight * 0.5))}px`,
             }}
-            className={cn(
-              "group pointer-events-auto absolute flex cursor-grab touch-none select-none items-center gap-1 rounded-md border-2 bg-black/55 py-1 pl-1 pr-1.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur-sm active:cursor-grabbing",
-              dragged ? "opacity-95" : "opacity-80 hover:opacity-100",
-            )}
+            className="pointer-events-auto absolute flex cursor-grab touch-none select-none items-center justify-center rounded-md text-center font-bold uppercase leading-none text-white opacity-90 shadow-lg ring-2 ring-white/70 active:cursor-grabbing"
           >
-            <GripVertical className="h-3 w-3 opacity-80" />
-            {BADGE_TYPES.find((t) => t.id === b.type)?.label ?? b.type}
+            {box.label}
           </button>
         );
       })}
@@ -166,6 +155,7 @@ export default function OverlaysPage() {
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [sectionId, setSectionId] = React.useState("");
   const [previewSrc, setPreviewSrc] = React.useState<string | null>(null);
+  const [boxes, setBoxes] = React.useState<BadgeBox[]>([]);
   const [applyJobId, setApplyJobId] = React.useState<string | null>(null);
   const [confirmApply, setConfirmApply] = React.useState(false);
   const [confirmRestore, setConfirmRestore] = React.useState(false);
@@ -242,6 +232,16 @@ export default function OverlaysPage() {
         if (old) URL.revokeObjectURL(old);
         return URL.createObjectURL(blob);
       });
+      // Fetch where each badge landed, for the draggable handles. Non-fatal.
+      try {
+        const layout = await api<{ boxes: BadgeBox[] }>(
+          `/api/overlays/preview-layout?ratingKey=${previewItem.ratingKey}`,
+          { method: "POST", body: JSON.stringify({ name, badges }) },
+        );
+        setBoxes(layout.boxes);
+      } catch {
+        setBoxes([]);
+      }
     } catch (e) {
       const timedOut = e instanceof DOMException && e.name === "TimeoutError";
       setError(timedOut ? "Preview timed out — the server may be busy." : (e as Error).message);
@@ -653,7 +653,8 @@ export default function OverlaysPage() {
                       )}
                     />
                     <DraggableBadges
-                      badges={badges}
+                      boxes={boxes}
+                      colors={Object.fromEntries(badges.map((b, i) => [i, b.color]))}
                       onMove={(index, x, y) => updateBadge(index, { x, y })}
                     />
                   </div>
