@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import {
   automationSettingsSchema,
   autoAddExistingSchema,
+  discordSettingsInputSchema,
   franchiseAutoCreateSchema,
   mediuxSyncSettingsSchema,
   mediuxWatchUpdateSchema,
@@ -9,6 +10,8 @@ import {
   type ActivityEvent,
   type AutomationPresets,
   type AutomationSettings,
+  type DiscordEvents,
+  type DiscordSettings,
   type DiscoveredCollection,
   type MediuxMatch,
   type MediuxSyncState,
@@ -56,7 +59,7 @@ import {
 import { discoverCollections } from "./discover.js";
 import { searchKeywords } from "./tmdb.js";
 import { startJob, getJob } from "./jobs.js";
-import { sendTestNotification } from "./notify.js";
+import { getDiscordEvents, sendTestNotification } from "./notify.js";
 import { automationsPaused } from "./scheduler.js";
 
 /** Public view of a watch — the stored YAML/fingerprint stay server-side. */
@@ -239,6 +242,38 @@ export function registerRuleRoutes(app: FastifyInstance): void {
   });
 
   app.post("/api/settings/automations/test-discord", async (_req, reply) => {
+    const url = getAppSetting("discord_webhook_url");
+    if (!url) return reply.status(428).send({ error: "Save a Discord webhook URL first." });
+    try {
+      await sendTestNotification(url);
+      return { ok: true };
+    } catch {
+      return reply.status(502).send({ error: "Discord rejected the webhook — check the URL." });
+    }
+  });
+
+  // ---------- Discord notifications ----------
+
+  const discordState = (): DiscordSettings => ({
+    configured: !!getAppSetting("discord_webhook_url"),
+    events: getDiscordEvents(),
+  });
+
+  app.get("/api/settings/discord", async (): Promise<DiscordSettings> => discordState());
+
+  app.put("/api/settings/discord", async (req): Promise<DiscordSettings> => {
+    const input = discordSettingsInputSchema.parse(req.body);
+    if (input.webhookUrl !== undefined) {
+      setAppSetting("discord_webhook_url", input.webhookUrl.trim());
+    }
+    if (input.events) {
+      const merged: DiscordEvents = { ...getDiscordEvents(), ...input.events };
+      setAppSetting("discord_events", JSON.stringify(merged));
+    }
+    return discordState();
+  });
+
+  app.post("/api/settings/discord/test", async (_req, reply) => {
     const url = getAppSetting("discord_webhook_url");
     if (!url) return reply.status(428).send({ error: "Save a Discord webhook URL first." });
     try {

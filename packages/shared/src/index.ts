@@ -450,6 +450,44 @@ export const automationSettingsSchema = z.object({
 });
 export type AutomationSettingsInput = z.infer<typeof automationSettingsSchema>;
 
+// ---------- Discord notifications ----------
+
+/** Which categories of change should ping Discord. */
+export interface DiscordEvents {
+  /** Scheduled/manual rule runs that changed something. */
+  rules: boolean;
+  /** MediUX auto-sync runs (and what triggered them). */
+  mediuxSync: boolean;
+  /** Manual MediUX set applies. */
+  mediuxApply: boolean;
+  /** Overlay apply / restore. */
+  overlays: boolean;
+  /** Collections created, updated, or deleted. */
+  collections: boolean;
+  /** Poster/background/metadata changes. */
+  artwork: boolean;
+}
+
+export interface DiscordSettings {
+  configured: boolean;
+  events: DiscordEvents;
+}
+
+export const discordEventsSchema = z.object({
+  rules: z.boolean(),
+  mediuxSync: z.boolean(),
+  mediuxApply: z.boolean(),
+  overlays: z.boolean(),
+  collections: z.boolean(),
+  artwork: z.boolean(),
+});
+
+export const discordSettingsInputSchema = z.object({
+  webhookUrl: z.string().optional(),
+  events: discordEventsSchema.partial().optional(),
+});
+export type DiscordSettingsInput = z.infer<typeof discordSettingsInputSchema>;
+
 export interface KeywordOption {
   id: number;
   name: string;

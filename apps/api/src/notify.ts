@@ -1,7 +1,46 @@
-import type { Rule, RuleRun } from "@metamagic/shared";
+import type { ActivityEvent, DiscordEvents, Rule, RuleRun } from "@metamagic/shared";
 import { getAppSetting } from "./db.js";
 
 const DISCORD_KEY = "discord_webhook_url";
+const EVENTS_KEY = "discord_events";
+
+const DEFAULT_EVENTS: DiscordEvents = {
+  rules: true,
+  mediuxSync: true,
+  mediuxApply: false,
+  overlays: false,
+  collections: false,
+  artwork: false,
+};
+
+export function getDiscordEvents(): DiscordEvents {
+  const raw = getAppSetting(EVENTS_KEY);
+  if (!raw) return DEFAULT_EVENTS;
+  try {
+    return { ...DEFAULT_EVENTS, ...(JSON.parse(raw) as Partial<DiscordEvents>) };
+  } catch {
+    return DEFAULT_EVENTS;
+  }
+}
+
+/** Which notification category an activity event belongs to. */
+function categoryFor(kind: ActivityEvent["kind"]): keyof DiscordEvents {
+  switch (kind) {
+    case "mediux-sync":
+      return "mediuxSync";
+    case "mediux-apply":
+      return "mediuxApply";
+    case "overlay-apply":
+    case "overlay-restore":
+      return "overlays";
+    case "collection-created":
+    case "collection-updated":
+    case "collection-deleted":
+      return "collections";
+    default:
+      return "artwork";
+  }
+}
 
 interface DiscordEmbed {
   title: string;
@@ -29,10 +68,31 @@ export async function sendTestNotification(webhookUrl: string): Promise<void> {
   });
 }
 
+/** Fired after any recorded activity event — pings Discord when its category is on. */
+export async function notifyActivityEvent(event: ActivityEvent): Promise<void> {
+  const webhookUrl = getAppSetting(DISCORD_KEY);
+  if (!webhookUrl) return;
+  if (!getDiscordEvents()[categoryFor(event.kind)]) return;
+
+  try {
+    await post(webhookUrl, {
+      title: `${event.status === "error" ? "❌" : "✅"} ${event.title}`,
+      description: [event.trigger && `_${event.trigger}_`, event.detail, event.url]
+        .filter(Boolean)
+        .join("\n"),
+      color: event.status === "error" ? 0xef4444 : 0x5b36e0,
+      timestamp: new Date(event.ts).toISOString(),
+    });
+  } catch {
+    // Never let a notification failure break the action it describes.
+  }
+}
+
 /** Fired after a rule run that did something worth reporting. */
 export async function notifyRuleRun(run: RuleRun, rule: Rule): Promise<void> {
   const webhookUrl = getAppSetting(DISCORD_KEY);
   if (!webhookUrl) return;
+  if (!getDiscordEvents().rules) return;
   if (run.status === "no-changes") return;
 
   const parts: string[] = [];

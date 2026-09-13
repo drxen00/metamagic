@@ -9,6 +9,7 @@ import {
   LayoutDashboard,
   Library,
   LogOut,
+  MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -27,6 +28,7 @@ const NAV = [
   { href: "/rules", label: "Automations", icon: Wand2 },
   { href: "/overlays", label: "Overlays", icon: Layers },
   { href: "/activity", label: "Activity", icon: Activity },
+  { href: "/discord", label: "Discord", icon: MessageSquare },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 

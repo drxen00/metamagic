@@ -291,8 +291,6 @@ function IntegrationsCard() {
 
 function AutomationsCard() {
   const qc = useQueryClient();
-  const [webhook, setWebhook] = React.useState("");
-  const [error, setError] = React.useState<string | null>(null);
 
   const { data: settings } = useQuery({
     queryKey: ["automations"],
@@ -305,18 +303,7 @@ function AutomationsCard() {
         method: "PUT",
         body: JSON.stringify(body),
       }),
-    onSuccess: () => {
-      setWebhook("");
-      setError(null);
-      qc.invalidateQueries({ queryKey: ["automations"] });
-    },
-    onError: (e) => setError((e as Error).message),
-  });
-
-  const test = useMutation({
-    mutationFn: () => api("/api/settings/automations/test-discord", { method: "POST" }),
-    onError: (e) => setError((e as Error).message),
-    onMutate: () => setError(null),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automations"] }),
   });
 
   return (
@@ -324,11 +311,11 @@ function AutomationsCard() {
       <CardHeader>
         <CardTitle>Automations</CardTitle>
         <CardDescription>
-          Rules run on their schedule in the background. Pause everything here, and get a Discord
-          ping whenever a rule changes something.
+          Rules and preset automations run on a schedule in the background. Pause everything here.
+          Discord notifications live in the Discord section.
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent>
         <div className="flex items-center justify-between gap-4 rounded-md border border-border/60 bg-secondary/20 px-3 py-2.5">
           <div>
             <p className="text-sm font-medium">
@@ -343,66 +330,11 @@ function AutomationsCard() {
           <Button
             variant={settings?.paused ? "default" : "outline"}
             size="sm"
-            loading={update.isPending && update.variables?.paused !== undefined}
+            loading={update.isPending}
             onClick={() => update.mutate({ paused: !settings?.paused })}
           >
             {settings?.paused ? "Resume" : "Pause all"}
           </Button>
-        </div>
-
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <Label htmlFor="discord">Discord webhook URL</Label>
-            {settings?.discordConfigured && <Badge variant="success">configured</Badge>}
-          </div>
-          <Input
-            id="discord"
-            type="password"
-            placeholder={
-              settings?.discordConfigured
-                ? "•••••••• (saved)"
-                : "https://discord.com/api/webhooks/…"
-            }
-            value={webhook}
-            onChange={(e) => setWebhook(e.target.value)}
-          />
-        </div>
-
-        {error && (
-          <p className="flex items-center gap-2 text-sm text-destructive">
-            <XCircle className="h-4 w-4 shrink-0" /> {error}
-          </p>
-        )}
-        {test.isSuccess && !error && (
-          <p className="flex items-center gap-2 text-sm text-success">
-            <CheckCircle2 className="h-4 w-4" /> Test message sent.
-          </p>
-        )}
-
-        <div className="flex gap-2">
-          <Button
-            loading={update.isPending && update.variables?.discordWebhookUrl !== undefined}
-            disabled={!webhook.trim()}
-            onClick={() => update.mutate({ discordWebhookUrl: webhook.trim() })}
-          >
-            Save webhook
-          </Button>
-          <Button
-            variant="outline"
-            loading={test.isPending}
-            disabled={!settings?.discordConfigured}
-            onClick={() => test.mutate()}
-          >
-            Send test
-          </Button>
-          {settings?.discordConfigured && (
-            <Button
-              variant="ghost"
-              onClick={() => update.mutate({ discordWebhookUrl: "" })}
-            >
-              Remove
-            </Button>
-          )}
         </div>
       </CardContent>
     </Card>
