@@ -3,6 +3,7 @@ import { Inter, JetBrains_Mono, Orbitron, Space_Grotesk, VT323 } from "next/font
 import "./globals.css";
 import { Providers } from "./providers";
 import { Sidebar } from "@/components/shell/sidebar";
+import { WhatsNew } from "@/components/shell/whats-new";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 const grotesk = Space_Grotesk({ subsets: ["latin"], variable: "--font-grotesk" });
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           >
             {children}
           </div>
+          <WhatsNew />
         </Providers>
       </body>
     </html>

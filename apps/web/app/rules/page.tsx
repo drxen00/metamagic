@@ -2,7 +2,19 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarClock, Pause, Pencil, Play, Plus, Tag, Trash2, Wand2 } from "lucide-react";
+import {
+  CalendarClock,
+  ChevronDown,
+  ChevronRight,
+  Pause,
+  Pencil,
+  Play,
+  Plus,
+  Sliders,
+  Tag,
+  Trash2,
+  Wand2,
+} from "lucide-react";
 import type { AutomationSettings, Rule } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -11,11 +23,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RuleDialog } from "@/components/rules/rule-dialog";
 import { JobLog } from "@/components/rules/job-log";
 import { MediuxSyncPanel } from "@/components/rules/mediux-sync-panel";
+import { PresetAutomations } from "@/components/rules/preset-automations-panel";
 
 const SCHEDULE_LABEL: Record<string, string> = {
   manual: "Manual only",
@@ -31,6 +43,7 @@ export default function RulesPage() {
   const [confirmDelete, setConfirmDelete] = React.useState<Rule | null>(null);
   const [runJobId, setRunJobId] = React.useState<string | null>(null);
   const [runningRule, setRunningRule] = React.useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = React.useState(false);
 
   const { data: rules, isLoading } = useQuery({
     queryKey: ["rules"],
@@ -76,22 +89,10 @@ export default function RulesPage() {
 
   return (
     <main>
-      <Topbar
-        title="Rules"
-        actions={
-          <Button
-            size="sm"
-            onClick={() => {
-              setEditing(undefined);
-              setDialogOpen(true);
-            }}
-          >
-            <Plus className="h-4 w-4" /> New rule
-          </Button>
-        }
-      />
+      <Topbar title="Automations" />
       <div className="space-y-4 p-6">
         <MediuxSyncPanel />
+        <PresetAutomations />
 
         {automations?.paused && (
           <Card className="border-warning/40">
@@ -102,31 +103,52 @@ export default function RulesPage() {
           </Card>
         )}
 
-        {isLoading ? (
-          <div className="space-y-3">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 rounded-xl" />
-            ))}
-          </div>
-        ) : !rules || rules.length === 0 ? (
-          <EmptyState
-            icon={Wand2}
-            title="No rules yet"
-            description="A rule keeps a Plex collection in sync with a TMDb franchise or keyword — adding new arrivals automatically, on a schedule, and re-applying your MediUX artwork."
-            action={
-              <Button
-                className="mt-2"
-                onClick={() => {
-                  setEditing(undefined);
-                  setDialogOpen(true);
-                }}
-              >
-                <Plus className="h-4 w-4" /> Create your first rule
-              </Button>
-            }
-          />
-        ) : (
-          <div className="space-y-3">
+        <div className="overflow-hidden rounded-xl border border-border/60">
+          <button
+            onClick={() => setAdvancedOpen((o) => !o)}
+            className="flex w-full items-center gap-2 px-4 py-3 text-left"
+          >
+            {advancedOpen ? (
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-4 w-4 text-muted-foreground" />
+            )}
+            <Sliders className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium">Advanced — custom rules</span>
+            <span className="ml-auto text-xs text-muted-foreground">
+              {rules?.length ?? 0} rule{(rules?.length ?? 0) === 1 ? "" : "s"}
+            </span>
+          </button>
+          {advancedOpen && (
+            <div className="space-y-3 border-t border-border/60 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="max-w-xl text-xs text-muted-foreground">
+                  Hand-built rules sync one collection to a specific TMDb franchise or keyword on a
+                  schedule. Most people won&apos;t need these — the automatic options above cover the
+                  common cases.
+                </p>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setEditing(undefined);
+                    setDialogOpen(true);
+                  }}
+                >
+                  <Plus className="h-4 w-4" /> New rule
+                </Button>
+              </div>
+              {isLoading ? (
+                <div className="space-y-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <Skeleton key={i} className="h-24 rounded-xl" />
+                  ))}
+                </div>
+              ) : !rules || rules.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">
+                  No custom rules yet — the automatic options above handle most needs.
+                </p>
+              ) : (
+                <div className="space-y-3">
             {rules.map((rule) => (
               <Card key={rule.id} className={cn(!rule.enabled && "opacity-60")}>
                 <CardContent className="flex flex-wrap items-center gap-4 p-4">
@@ -199,7 +221,10 @@ export default function RulesPage() {
               </Card>
             ))}
           </div>
-        )}
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <RuleDialog open={dialogOpen} onClose={() => setDialogOpen(false)} rule={editing} />

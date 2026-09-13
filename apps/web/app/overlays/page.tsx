@@ -686,7 +686,8 @@ export default function OverlaysPage() {
                     />
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Drag a badge on the poster to place it exactly. Changing its{" "}
+                    <span className="font-semibold text-primary">Tip:</span> Drag a badge on the
+                    poster to place it exactly. Changing its{" "}
                     <span className="text-foreground/80">Position</span> snaps it back to a corner.
                   </p>
                 </>

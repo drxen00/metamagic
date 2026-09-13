@@ -1,0 +1,54 @@
+export interface ChangelogEntry {
+  version: string;
+  title: string;
+  date: string;
+  added?: string[];
+  fixed?: string[];
+}
+
+/**
+ * Newest first. Bump the top entry's `version` whenever you want the "What's
+ * new" dialog to pop for everyone after they update. Keep entries short and
+ * user-facing.
+ */
+export const CHANGELOG: ChangelogEntry[] = [
+  {
+    version: "0.15.0",
+    title: "Automations, reimagined",
+    date: "2026-09-13",
+    added: [
+      "The Rules page is now Automations — a home for set-and-forget collection automation.",
+      "Auto-create franchise collections: MetaMagic makes the collection once you own enough of a franchise.",
+      "Auto-add new movies to the collections you already have (with a per-collection exclude list).",
+      "A “What’s new” note (this one!) after each update.",
+    ],
+    fixed: [
+      "Overlay drag is now smooth and shows the real badge where it’ll land.",
+      "Custom rules are tucked under “Advanced” so the automatic options come first.",
+    ],
+  },
+  {
+    version: "0.14.0",
+    title: "Activity that shows everything",
+    date: "2026-09-13",
+    added: [
+      "Activity now logs every change — poster/art updates (with the source link), uploads, MediUX & ThePosterDB applies, metadata edits, and collection changes.",
+      "MediUX Auto-Sync: choose “On detection” or a schedule, with a live status line and “Sync all now”.",
+    ],
+    fixed: [
+      "Collection discovery can suggest a collection from a single owned film now.",
+      "Poster changes made in MetaMagic show up everywhere, including overlay previews.",
+    ],
+  },
+  {
+    version: "0.13.0",
+    title: "MediUX Auto-Sync",
+    date: "2026-09-13",
+    added: [
+      "Apply a MediUX set to a collection or show and MetaMagic remembers it, keeping new movies and seasons styled automatically.",
+      "Poster overlays you can drag into place in a live preview.",
+    ],
+  },
+];
+
+export const CURRENT_VERSION = CHANGELOG[0].version;
