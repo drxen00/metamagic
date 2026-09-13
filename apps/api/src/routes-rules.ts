@@ -1,9 +1,14 @@
 import type { FastifyInstance } from "fastify";
 import {
   automationSettingsSchema,
+  mediuxSyncSettingsSchema,
+  mediuxWatchUpdateSchema,
   ruleInputSchema,
   type AutomationSettings,
   type DiscoveredCollection,
+  type MediuxMatch,
+  type MediuxSyncState,
+  type MediuxWatch,
   type Rule,
   type RuleChange,
   type RuleEvaluation,
@@ -14,21 +19,42 @@ import { PlexError } from "./plex.js";
 import {
   createRule,
   deleteRule,
+  deleteMediuxWatch,
+  getMediuxWatch,
   getRule,
   getRun,
+  listMediuxWatches,
   listRules,
   listRuns,
   resolveRun,
   setAppSetting,
+  setMediuxWatchEnabled,
+  recordMediuxWatchSync,
   getAppSetting,
   updateRule,
 } from "./db.js";
 import { applyChanges, evaluateRule, runRule } from "./rules.js";
+import { computeSignature, mediuxAutoSyncEnabled, syncWatch } from "./mediux-sync.js";
 import { discoverCollections } from "./discover.js";
 import { searchKeywords } from "./tmdb.js";
 import { startJob, getJob } from "./jobs.js";
 import { sendTestNotification } from "./notify.js";
 import { automationsPaused } from "./scheduler.js";
+
+/** Public view of a watch — the stored YAML/fingerprint stay server-side. */
+function toWatchSummary(w: ReturnType<typeof listMediuxWatches>[number]): MediuxWatch {
+  return {
+    ratingKey: w.ratingKey,
+    type: w.type,
+    title: w.title,
+    tmdbId: w.tmdbId,
+    setUrl: w.setUrl,
+    enabled: w.enabled,
+    lastSyncedAt: w.lastSyncedAt,
+    lastResult: w.lastResult,
+    updatedAt: w.updatedAt,
+  };
+}
 
 export function registerRuleRoutes(app: FastifyInstance): void {
   // ---------- Rule CRUD ----------
@@ -194,6 +220,52 @@ export function registerRuleRoutes(app: FastifyInstance): void {
       return reply.status(502).send({ error: "Discord rejected the webhook — check the URL." });
     }
   });
+
+  // ---------- MediUX auto-sync ----------
+
+  app.get("/api/mediux/sync", async (): Promise<MediuxSyncState> => ({
+    enabled: mediuxAutoSyncEnabled(),
+    watches: listMediuxWatches().map(toWatchSummary),
+  }));
+
+  app.put("/api/mediux/sync", async (req): Promise<MediuxSyncState> => {
+    const input = mediuxSyncSettingsSchema.parse(req.body);
+    setAppSetting("mediux_autosync", input.enabled ? "true" : "");
+    return { enabled: mediuxAutoSyncEnabled(), watches: listMediuxWatches().map(toWatchSummary) };
+  });
+
+  app.put<{ Params: { ratingKey: string } }>(
+    "/api/mediux/watches/:ratingKey",
+    async (req, reply) => {
+      const input = mediuxWatchUpdateSchema.parse(req.body);
+      if (!getMediuxWatch(req.params.ratingKey)) {
+        return reply.status(404).send({ error: "That MediUX watch no longer exists." });
+      }
+      setMediuxWatchEnabled(req.params.ratingKey, input.enabled);
+      return { ok: true };
+    },
+  );
+
+  app.delete<{ Params: { ratingKey: string } }>("/api/mediux/watches/:ratingKey", async (req) => {
+    deleteMediuxWatch(req.params.ratingKey);
+    return { ok: true };
+  });
+
+  // Sync one watch right now (adds new members + re-applies its set).
+  app.post<{ Params: { ratingKey: string } }>(
+    "/api/mediux/watches/:ratingKey/run",
+    async (req, reply) => {
+      const watch = getMediuxWatch(req.params.ratingKey);
+      if (!watch) return reply.status(404).send({ error: "That MediUX watch no longer exists." });
+      const client = requirePlex();
+      const job = startJob<MediuxMatch>("mediux-sync", async (report) => {
+        const result = await syncWatch(client, watch, { force: true, report });
+        const after = await computeSignature(client, watch).catch(() => watch.lastSignature);
+        recordMediuxWatchSync(watch.ratingKey, after, result);
+      });
+      return { jobId: job.id };
+    },
+  );
 
   // Job polling is shared with the rest of the app
   void getJob;
