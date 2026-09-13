@@ -212,7 +212,18 @@ export function PosterPicker({
               matches in your libraries (shows, seasons, episode cards, movies), not just this
               item.
             </p>
-            <MediuxImportPanel rows={8} onDone={onClose} />
+            <MediuxImportPanel
+              rows={8}
+              onDone={onClose}
+              scope={
+                itemType === "collection" ||
+                itemType === "show" ||
+                itemType === "season" ||
+                itemType === "movie"
+                  ? { ratingKey, type: itemType }
+                  : undefined
+              }
+            />
           </div>
         ) : tab !== "url" ? (
           <div className="max-h-[74vh] min-h-[40vh] overflow-y-auto pr-1">

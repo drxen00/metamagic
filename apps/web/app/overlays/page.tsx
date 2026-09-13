@@ -3,6 +3,7 @@
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  GripVertical,
   History,
   Layers,
   Plus,
@@ -132,15 +133,24 @@ function DraggableBadges({
           window.addEventListener("pointerup", up);
         };
 
+        const dragged = typeof b.x === "number" && typeof b.y === "number";
         return (
           <button
             key={i}
             type="button"
             onPointerDown={startDrag}
             title="Drag to position this badge"
-            className="pointer-events-auto absolute cursor-grab touch-none select-none rounded-md border border-white/70 bg-black/70 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-white shadow-md ring-1 ring-black/40 backdrop-blur-sm active:cursor-grabbing"
-            style={{ left: `${anchor.x * 100}%`, top: `${anchor.y * 100}%` }}
+            style={{
+              left: `${anchor.x * 100}%`,
+              top: `${anchor.y * 100}%`,
+              borderColor: b.color,
+            }}
+            className={cn(
+              "group pointer-events-auto absolute flex cursor-grab touch-none select-none items-center gap-1 rounded-md border-2 bg-black/55 py-1 pl-1 pr-1.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow-lg backdrop-blur-sm active:cursor-grabbing",
+              dragged ? "opacity-95" : "opacity-80 hover:opacity-100",
+            )}
           >
+            <GripVertical className="h-3 w-3 opacity-80" />
             {BADGE_TYPES.find((t) => t.id === b.type)?.label ?? b.type}
           </button>
         );

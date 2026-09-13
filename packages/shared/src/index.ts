@@ -199,6 +199,13 @@ export type IntegrationsInput = z.infer<typeof integrationsSchema>;
 
 export const mediuxImportSchema = z.object({
   yaml: z.string().min(1, "Paste the YAML from a MediUX set page"),
+  /**
+   * When the YAML is applied from a collection's or show's poster picker, the
+   * target it's scoped to. Lets MetaMagic remember the set for auto-sync so new
+   * franchise movies / seasons get re-styled automatically.
+   */
+  scopeRatingKey: z.string().optional(),
+  scopeType: z.enum(["collection", "show", "season", "movie"]).optional(),
 });
 export type MediuxImportInput = z.infer<typeof mediuxImportSchema>;
 
@@ -412,6 +419,41 @@ export interface KeywordOption {
   id: number;
   name: string;
 }
+
+// ---------- MediUX auto-sync ----------
+
+/**
+ * A collection or show whose MediUX set MetaMagic remembers, so it can re-apply
+ * the artwork (and, for collections, keep membership complete) when new content
+ * is detected. Created automatically when a MediUX set is applied from that
+ * item's poster picker.
+ */
+export interface MediuxWatch {
+  ratingKey: string;
+  type: "collection" | "show";
+  title: string;
+  /** TMDb collection id (collections) or TMDb id (shows), when resolved. */
+  tmdbId?: string;
+  /** The MediUX set page the YAML came from, when derivable. */
+  setUrl?: string;
+  /** Per-item override so users can keep sync on globally but skip a few. */
+  enabled: boolean;
+  lastSyncedAt?: number;
+  lastResult?: string;
+  updatedAt: number;
+}
+
+export interface MediuxSyncState {
+  /** The global auto-sync toggle. */
+  enabled: boolean;
+  watches: MediuxWatch[];
+}
+
+export const mediuxSyncSettingsSchema = z.object({ enabled: z.boolean() });
+export type MediuxSyncSettingsInput = z.infer<typeof mediuxSyncSettingsSchema>;
+
+export const mediuxWatchUpdateSchema = z.object({ enabled: z.boolean() });
+export type MediuxWatchUpdateInput = z.infer<typeof mediuxWatchUpdateSchema>;
 
 // ---------- Overlays ----------
 

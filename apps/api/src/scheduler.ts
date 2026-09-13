@@ -3,6 +3,7 @@ import type { Rule } from "@metamagic/shared";
 import { getAppSetting, listRules } from "./db.js";
 import { plexClient } from "./client-store.js";
 import { runRule } from "./rules.js";
+import { runMediuxAutoSync } from "./mediux-sync.js";
 
 const TICK_MS = 15 * 60 * 1000;
 
@@ -43,6 +44,13 @@ export function startScheduler(log: FastifyBaseLogger): void {
       } catch (err) {
         log.error({ err, ruleId: rule.id }, "scheduled rule threw");
       }
+    }
+
+    // MediUX auto-sync: re-style collections/shows whose content changed.
+    try {
+      await runMediuxAutoSync(client, log);
+    } catch (err) {
+      log.error({ err }, "mediux auto-sync threw");
     }
   };
 

@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import path from "node:path";
 import type {
   Badge,
+  MediuxWatch,
   OverlayPreset,
   OverlayPresetInput,
   Rule,
@@ -118,6 +119,22 @@ db.exec(`
     collection_id INTEGER,
     collection_name TEXT,
     fetched_at INTEGER NOT NULL
+  );
+
+  /* Collections/shows whose MediUX set we remember, for auto-sync of new
+     content. Created when a MediUX set is applied from the item's picker. */
+  CREATE TABLE IF NOT EXISTS mediux_watches (
+    rating_key TEXT PRIMARY KEY,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    tmdb_id TEXT,
+    yaml TEXT NOT NULL,
+    set_url TEXT,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    last_signature TEXT,
+    last_synced_at INTEGER,
+    last_result TEXT,
+    updated_at INTEGER NOT NULL
   );
 `);
 
@@ -598,6 +615,114 @@ export function listOriginalArtwork(): OriginalArtworkRow[] {
 export function countOriginalArtwork(): number {
   const row = db.prepare("SELECT COUNT(*) AS n FROM original_artwork").get() as { n: number };
   return row.n;
+}
+
+// ---------- MediUX auto-sync watches ----------
+
+interface MediuxWatchRow {
+  rating_key: string;
+  type: string;
+  title: string;
+  tmdb_id: string | null;
+  yaml: string;
+  set_url: string | null;
+  enabled: number;
+  last_signature: string | null;
+  last_synced_at: number | null;
+  last_result: string | null;
+  updated_at: number;
+}
+
+/** Full row including the YAML + signature (server-internal, not sent to the browser). */
+export interface MediuxWatchFull extends MediuxWatch {
+  yaml: string;
+  lastSignature?: string;
+}
+
+function toWatch(row: MediuxWatchRow): MediuxWatchFull {
+  return {
+    ratingKey: row.rating_key,
+    type: row.type === "show" ? "show" : "collection",
+    title: row.title,
+    tmdbId: row.tmdb_id ?? undefined,
+    yaml: row.yaml,
+    setUrl: row.set_url ?? undefined,
+    enabled: row.enabled !== 0,
+    lastSignature: row.last_signature ?? undefined,
+    lastSyncedAt: row.last_synced_at ?? undefined,
+    lastResult: row.last_result ?? undefined,
+    updatedAt: row.updated_at,
+  };
+}
+
+export function listMediuxWatches(): MediuxWatchFull[] {
+  return (
+    db.prepare("SELECT * FROM mediux_watches ORDER BY title").all() as MediuxWatchRow[]
+  ).map(toWatch);
+}
+
+export function getMediuxWatch(ratingKey: string): MediuxWatchFull | undefined {
+  const row = db.prepare("SELECT * FROM mediux_watches WHERE rating_key = ?").get(ratingKey) as
+    | MediuxWatchRow
+    | undefined;
+  return row ? toWatch(row) : undefined;
+}
+
+/** Create or update the remembered set for a collection/show. Preserves the
+ *  enabled flag on update so a user's opt-out survives re-applying the set. */
+export function upsertMediuxWatch(input: {
+  ratingKey: string;
+  type: "collection" | "show";
+  title: string;
+  tmdbId?: string;
+  yaml: string;
+  setUrl?: string;
+  signature?: string;
+}): void {
+  db.prepare(
+    `INSERT INTO mediux_watches
+       (rating_key, type, title, tmdb_id, yaml, set_url, enabled, last_signature, updated_at)
+     VALUES (@ratingKey, @type, @title, @tmdbId, @yaml, @setUrl, 1, @signature, @now)
+     ON CONFLICT(rating_key) DO UPDATE SET
+       type = excluded.type,
+       title = excluded.title,
+       tmdb_id = COALESCE(excluded.tmdb_id, mediux_watches.tmdb_id),
+       yaml = excluded.yaml,
+       set_url = COALESCE(excluded.set_url, mediux_watches.set_url),
+       last_signature = excluded.last_signature,
+       updated_at = excluded.updated_at`,
+  ).run({
+    ratingKey: input.ratingKey,
+    type: input.type,
+    title: input.title,
+    tmdbId: input.tmdbId ?? null,
+    yaml: input.yaml,
+    setUrl: input.setUrl ?? null,
+    signature: input.signature ?? null,
+    now: Date.now(),
+  });
+}
+
+export function setMediuxWatchEnabled(ratingKey: string, enabled: boolean): void {
+  db.prepare("UPDATE mediux_watches SET enabled = ?, updated_at = ? WHERE rating_key = ?").run(
+    enabled ? 1 : 0,
+    Date.now(),
+    ratingKey,
+  );
+}
+
+export function recordMediuxWatchSync(
+  ratingKey: string,
+  signature: string | undefined,
+  result: string,
+): void {
+  db.prepare(
+    "UPDATE mediux_watches SET last_signature = ?, last_synced_at = ?, last_result = ? WHERE rating_key = ?",
+  ).run(signature ?? null, Date.now(), result, ratingKey);
+}
+
+export function deleteMediuxWatch(ratingKey: string): void {
+  db.prepare("DELETE FROM mediux_watches WHERE rating_key = ?").run(ratingKey);
 }
 
 // ---------- TMDb movie → collection cache ----------

@@ -13,10 +13,13 @@ import { Button } from "@/components/ui/button";
 export function MediuxImportPanel({
   rows = 6,
   onDone,
+  scope,
 }: {
   rows?: number;
   /** When set, a "Done" button appears once an apply finishes (e.g. to close the poster picker). */
   onDone?: () => void;
+  /** The collection/show this picker is scoped to — lets MetaMagic remember the set for auto-sync. */
+  scope?: { ratingKey: string; type: "collection" | "show" | "season" | "movie" };
 }) {
   const qc = useQueryClient();
   const [yamlText, setYamlText] = React.useState("");
@@ -43,7 +46,10 @@ export function MediuxImportPanel({
     mutationFn: () =>
       api<{ jobId: string }>("/api/mediux/apply", {
         method: "POST",
-        body: JSON.stringify({ yaml: yamlText }),
+        body: JSON.stringify({
+          yaml: yamlText,
+          ...(scope ? { scopeRatingKey: scope.ratingKey, scopeType: scope.type } : {}),
+        }),
       }),
     onSuccess: (data) => {
       setJobId(data.jobId);

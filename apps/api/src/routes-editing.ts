@@ -23,69 +23,31 @@ import {
   deleteCollectionLink,
   getAppSetting,
   getArtworkSources,
-  getCollectionLink,
   recordArtworkSource,
   setAppSetting,
   setCollectionLink,
 } from "./db.js";
 import {
   getTmdbCollectionParts,
-  movieCollection,
   searchTmdbCollection,
   searchTmdbCollections,
   tmdbArtwork,
   tmdbSeasonArtwork,
   validateTmdbKey,
 } from "./tmdb.js";
+import { cleanCollectionTitle, resolveTmdbCollection } from "./collection-match.js";
 import { indexByIds } from "./mediux.js";
 import { applyMediux, previewMediux } from "./mediux.js";
 import { fetchRemoteImage } from "./remote-image.js";
 import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
+import { rememberMediuxSet } from "./mediux-sync.js";
 
 function editTypeId(itemType: string): number {
   const id = EDIT_TYPE_IDS[itemType];
   if (!id) throw new PlexError(`Editing is not supported for type "${itemType}"`, 400);
   return id;
-}
-
-/** "Fast & Furious Collection" → "Fast & Furious" for external searches. */
-function cleanCollectionTitle(title: string): string {
-  return title.replace(/\s+collection\s*$/i, "").trim() || title;
-}
-
-/**
- * Decide which TMDb collection a Plex collection should be measured against.
- *
- * Title search alone is unreliable (a "Middle Earth" collection matches
- * nothing; "The Lord of the Rings Collection" matches the making-of docs), so
- * prefer hard evidence: ask TMDb which collection the collection's own movies
- * belong to and take the most common answer. A user-pinned link always wins.
- */
-async function resolveTmdbCollection(
-  ratingKey: string,
-  title: string,
-  children: MediaItem[],
-): Promise<{ id: number; source: "manual" | "contents" | "title" } | undefined> {
-  const pinned = getCollectionLink(ratingKey);
-  if (pinned) return { id: pinned.tmdbCollectionId, source: "manual" };
-
-  const votes = new Map<number, number>();
-  for (const child of children.slice(0, 12)) {
-    if (!child.tmdbId || child.type !== "movie") continue;
-    const belongs = await movieCollection(child.tmdbId).catch(() => undefined);
-    if (belongs) votes.set(belongs.id, (votes.get(belongs.id) ?? 0) + 1);
-  }
-  const winner = [...votes.entries()].sort((a, b) => b[1] - a[1])[0];
-  // Require corroboration (2+ movies, or the only movie present) so a single
-  // odd member can't hijack the match.
-  if (winner && (winner[1] >= 2 || children.length === 1)) {
-    return { id: winner[0], source: "contents" };
-  }
-
-  const byTitle = await searchTmdbCollection(cleanCollectionTitle(title)).catch(() => undefined);
-  return byTitle ? { id: byTitle, source: "title" } : undefined;
 }
 
 /** Classify a user-supplied "where's it from" page link into a provenance entry. */
@@ -393,9 +355,16 @@ export function registerEditingRoutes(app: FastifyInstance): void {
   app.post("/api/mediux/apply", async (req) => {
     const input = mediuxImportSchema.parse(req.body);
     const client = requirePlex();
-    const job = startJob("mediux", (report) =>
-      applyMediux(client, input.yaml, report).then(() => undefined),
-    );
+    const job = startJob("mediux", async (report) => {
+      await applyMediux(client, input.yaml, report);
+      // Applied from a collection/show picker → remember it for auto-sync.
+      if (input.scopeRatingKey) {
+        report.log("• remembering this MediUX set for auto-sync");
+        await rememberMediuxSet(client, input.scopeRatingKey, input.scopeType, input.yaml).catch(
+          (err) => report.log(`✗ couldn't remember set — ${err instanceof Error ? err.message : "failed"}`),
+        );
+      }
+    });
     return { jobId: job.id };
   });
 

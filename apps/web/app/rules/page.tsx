@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RuleDialog } from "@/components/rules/rule-dialog";
 import { JobLog } from "@/components/rules/job-log";
+import { MediuxSyncPanel } from "@/components/rules/mediux-sync-panel";
 
 const SCHEDULE_LABEL: Record<string, string> = {
   manual: "Manual only",
@@ -90,6 +91,8 @@ export default function RulesPage() {
         }
       />
       <div className="space-y-4 p-6">
+        <MediuxSyncPanel />
+
         {automations?.paused && (
           <Card className="border-warning/40">
             <CardContent className="flex items-center gap-3 p-4 text-sm">
