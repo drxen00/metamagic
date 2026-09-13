@@ -149,6 +149,7 @@ db.exec(`
     last_signature TEXT,
     last_synced_at INTEGER,
     last_result TEXT,
+    created_at INTEGER,
     updated_at INTEGER NOT NULL
   );
 `);
@@ -159,6 +160,7 @@ function ensureColumn(table: string, column: string, ddl: string): void {
   if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
 }
 ensureColumn("activity_events", "url", "url TEXT");
+ensureColumn("mediux_watches", "created_at", "created_at INTEGER");
 
 export interface StoredConnection {
   url: string;
@@ -652,6 +654,7 @@ interface MediuxWatchRow {
   last_signature: string | null;
   last_synced_at: number | null;
   last_result: string | null;
+  created_at: number | null;
   updated_at: number;
 }
 
@@ -673,6 +676,7 @@ function toWatch(row: MediuxWatchRow): MediuxWatchFull {
     lastSignature: row.last_signature ?? undefined,
     lastSyncedAt: row.last_synced_at ?? undefined,
     lastResult: row.last_result ?? undefined,
+    createdAt: row.created_at ?? row.updated_at,
     updatedAt: row.updated_at,
   };
 }
@@ -703,8 +707,8 @@ export function upsertMediuxWatch(input: {
 }): void {
   db.prepare(
     `INSERT INTO mediux_watches
-       (rating_key, type, title, tmdb_id, yaml, set_url, enabled, last_signature, updated_at)
-     VALUES (@ratingKey, @type, @title, @tmdbId, @yaml, @setUrl, 1, @signature, @now)
+       (rating_key, type, title, tmdb_id, yaml, set_url, enabled, last_signature, created_at, updated_at)
+     VALUES (@ratingKey, @type, @title, @tmdbId, @yaml, @setUrl, 1, @signature, @now, @now)
      ON CONFLICT(rating_key) DO UPDATE SET
        type = excluded.type,
        title = excluded.title,

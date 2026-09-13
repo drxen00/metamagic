@@ -70,6 +70,7 @@ function toWatchSummary(w: ReturnType<typeof listMediuxWatches>[number]): Mediux
     enabled: w.enabled,
     lastSyncedAt: w.lastSyncedAt,
     lastResult: w.lastResult,
+    createdAt: w.createdAt,
     updatedAt: w.updatedAt,
   };
 }

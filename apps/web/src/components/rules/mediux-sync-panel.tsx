@@ -2,8 +2,19 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Layers, Play, Pause, RotateCw, Settings, Sparkles, Trash2, Tv } from "lucide-react";
-import type { MediuxSyncMode, MediuxSyncState } from "@metamagic/shared";
+import {
+  ChevronDown,
+  ChevronRight,
+  Layers,
+  Play,
+  Pause,
+  RotateCw,
+  Settings,
+  Sparkles,
+  Trash2,
+  Tv,
+} from "lucide-react";
+import type { MediuxSort, MediuxSyncMode, MediuxSyncState } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -108,6 +119,15 @@ export function MediuxSyncPanel() {
   const mode: MediuxSyncMode = data?.mode ?? "detect";
   const watches = data?.watches ?? [];
 
+  const [listCollapsed, setListCollapsed] = React.useState(false);
+  const [sort, setSort] = React.useState<MediuxSort>("title");
+  const sortedWatches = React.useMemo(() => {
+    const list = [...watches];
+    if (sort === "title") return list.sort((a, b) => a.title.localeCompare(b.title));
+    if (sort === "first-tracked") return list.sort((a, b) => a.createdAt - b.createdAt);
+    return list.sort((a, b) => (b.lastSyncedAt ?? 0) - (a.lastSyncedAt ?? 0));
+  }, [watches, sort]);
+
   const statusLine = !enabled
     ? "Auto-sync is off — your remembered sets won't change on their own."
     : mode === "detect"
@@ -181,23 +201,6 @@ export function MediuxSyncPanel() {
             </div>
           )}
 
-          {watches.length > 0 && (
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs text-muted-foreground">
-                {watches.length} tracked · {watches.filter((w) => w.enabled).length} active
-              </span>
-              <Button
-                size="sm"
-                variant="outline"
-                loading={runAll.isPending}
-                disabled={watches.every((w) => !w.enabled)}
-                onClick={() => runAll.mutate()}
-              >
-                <RotateCw className="h-3.5 w-3.5" /> Sync all now
-              </Button>
-            </div>
-          )}
-
           {watches.length === 0 ? (
             <p className="rounded-md border border-border/60 bg-secondary/20 p-3 text-sm text-muted-foreground">
               Nothing here yet. Open a collection or show, hit <strong>Change poster</strong> → the{" "}
@@ -205,8 +208,45 @@ export function MediuxSyncPanel() {
               in sync.
             </p>
           ) : (
-            <div className="space-y-1.5">
-              {watches.map((w) => (
+            <>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <button
+                  onClick={() => setListCollapsed((c) => !c)}
+                  className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+                >
+                  {listCollapsed ? (
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  ) : (
+                    <ChevronDown className="h-3.5 w-3.5" />
+                  )}
+                  {watches.length} tracked · {watches.filter((w) => w.enabled).length} active
+                </button>
+                <div className="flex items-center gap-2">
+                  <NativeSelect
+                    value={sort}
+                    onChange={(e) => setSort(e.target.value as MediuxSort)}
+                    className="h-7 text-xs"
+                    aria-label="Sort"
+                  >
+                    <option value="title">Title (A–Z)</option>
+                    <option value="first-tracked">First tracked</option>
+                    <option value="recently-synced">Recently synced</option>
+                  </NativeSelect>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    loading={runAll.isPending}
+                    disabled={watches.every((w) => !w.enabled)}
+                    onClick={() => runAll.mutate()}
+                  >
+                    <RotateCw className="h-3.5 w-3.5" /> Sync all now
+                  </Button>
+                </div>
+              </div>
+
+              {!listCollapsed && (
+                <div className="space-y-1.5">
+                  {sortedWatches.map((w) => (
                 <div
                   key={w.ratingKey}
                   className={cn(
@@ -257,8 +297,10 @@ export function MediuxSyncPanel() {
                     </Button>
                   </div>
                 </div>
-              ))}
-            </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </CardContent>
       </Card>
