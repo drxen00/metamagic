@@ -409,6 +409,41 @@ export interface AutomationSettings {
   discordConfigured: boolean;
 }
 
+// ---------- Predefined automations ----------
+
+/** Auto-create Plex collections from TMDb franchises you own films from. */
+export interface FranchiseAutoCreate {
+  enabled: boolean;
+  /** Only create when at least this many of the franchise's films are owned. */
+  minMovies: number;
+}
+
+/** Auto-add newly-owned franchise films to the collections you already have. */
+export interface AutoAddExisting {
+  enabled: boolean;
+  /** Collections (by ratingKey) to leave untouched. */
+  excludeRatingKeys: string[];
+}
+
+export interface AutomationPresets {
+  franchise: FranchiseAutoCreate;
+  autoAdd: AutoAddExisting;
+  /** When the preset automations last ran (they're gated to once a day). */
+  lastRunAt?: number;
+}
+
+export const franchiseAutoCreateSchema = z.object({
+  enabled: z.boolean(),
+  minMovies: z.number().int().min(1).max(20),
+});
+export type FranchiseAutoCreateInput = z.infer<typeof franchiseAutoCreateSchema>;
+
+export const autoAddExistingSchema = z.object({
+  enabled: z.boolean(),
+  excludeRatingKeys: z.array(z.string()),
+});
+export type AutoAddExistingInput = z.infer<typeof autoAddExistingSchema>;
+
 export const automationSettingsSchema = z.object({
   paused: z.boolean().optional(),
   discordWebhookUrl: z.string().optional(),

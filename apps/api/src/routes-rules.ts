@@ -1,10 +1,13 @@
 import type { FastifyInstance } from "fastify";
 import {
   automationSettingsSchema,
+  autoAddExistingSchema,
+  franchiseAutoCreateSchema,
   mediuxSyncSettingsSchema,
   mediuxWatchUpdateSchema,
   ruleInputSchema,
   type ActivityEvent,
+  type AutomationPresets,
   type AutomationSettings,
   type DiscoveredCollection,
   type MediuxMatch,
@@ -43,6 +46,13 @@ import {
   syncWatch,
 } from "./mediux-sync.js";
 import { listActivity, recordActivity } from "./activity.js";
+import {
+  automationsLastRunAt,
+  getAutoAddExisting,
+  getFranchiseAutoCreate,
+  setAutoAddExisting,
+  setFranchiseAutoCreate,
+} from "./automations.js";
 import { discoverCollections } from "./discover.js";
 import { searchKeywords } from "./tmdb.js";
 import { startJob, getJob } from "./jobs.js";
@@ -342,6 +352,24 @@ export function registerRuleRoutes(app: FastifyInstance): void {
       }
     });
     return { jobId: job.id };
+  });
+
+  // ---------- Preset automations ----------
+
+  app.get("/api/automations/presets", async (): Promise<AutomationPresets> => ({
+    franchise: getFranchiseAutoCreate(),
+    autoAdd: getAutoAddExisting(),
+    lastRunAt: automationsLastRunAt(),
+  }));
+
+  app.put("/api/automations/franchise", async (req): Promise<AutomationPresets> => {
+    setFranchiseAutoCreate(franchiseAutoCreateSchema.parse(req.body));
+    return { franchise: getFranchiseAutoCreate(), autoAdd: getAutoAddExisting(), lastRunAt: automationsLastRunAt() };
+  });
+
+  app.put("/api/automations/auto-add", async (req): Promise<AutomationPresets> => {
+    setAutoAddExisting(autoAddExistingSchema.parse(req.body));
+    return { franchise: getFranchiseAutoCreate(), autoAdd: getAutoAddExisting(), lastRunAt: automationsLastRunAt() };
   });
 
   // ---------- Activity feed ----------

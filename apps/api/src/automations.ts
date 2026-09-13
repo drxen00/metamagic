@@ -1,0 +1,143 @@
+import type { FastifyBaseLogger } from "fastify";
+import type { AutoAddExisting, FranchiseAutoCreate } from "@metamagic/shared";
+import type { PlexClient } from "./plex.js";
+import { getAppSetting, setAppSetting } from "./db.js";
+import { discoverCollections } from "./discover.js";
+import { indexByIds } from "./mediux.js";
+import { resolveTmdbCollection } from "./collection-match.js";
+import { getTmdbCollectionParts, tmdbConfigured } from "./tmdb.js";
+import { recordActivity } from "./activity.js";
+
+const DAILY = 24 * 60 * 60 * 1000;
+
+function readJson<T>(key: string, fallback: T): T {
+  const raw = getAppSetting(key);
+  if (!raw) return fallback;
+  try {
+    return { ...fallback, ...(JSON.parse(raw) as Partial<T>) };
+  } catch {
+    return fallback;
+  }
+}
+
+export function getFranchiseAutoCreate(): FranchiseAutoCreate {
+  return readJson<FranchiseAutoCreate>("auto_create_franchise", { enabled: false, minMovies: 2 });
+}
+
+export function setFranchiseAutoCreate(cfg: FranchiseAutoCreate): void {
+  setAppSetting("auto_create_franchise", JSON.stringify(cfg));
+}
+
+export function getAutoAddExisting(): AutoAddExisting {
+  return readJson<AutoAddExisting>("auto_add_existing", { enabled: false, excludeRatingKeys: [] });
+}
+
+export function setAutoAddExisting(cfg: AutoAddExisting): void {
+  setAppSetting("auto_add_existing", JSON.stringify(cfg));
+}
+
+export function automationsLastRunAt(): number | undefined {
+  const v = getAppSetting("automations_presets_last_run");
+  return v ? Number(v) : undefined;
+}
+
+/** Create collections for owned TMDb franchises that don't have one yet. */
+async function runFranchiseAutoCreate(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
+  const cfg = getFranchiseAutoCreate();
+  if (!cfg.enabled || !tmdbConfigured()) return;
+
+  const suggestions = await discoverCollections(client);
+  const sections = await client.sections();
+  for (const s of suggestions) {
+    if (s.existing || s.owned.length < cfg.minMovies) continue;
+    const section = sections.find((sec) => sec.id === s.sectionId);
+    if (!section) continue;
+    try {
+      await client.createCollection(
+        s.sectionId,
+        section.type,
+        s.name,
+        s.owned.map((o) => o.ratingKey),
+      );
+      recordActivity({
+        kind: "collection-created",
+        title: `Created collection “${s.name}”`,
+        detail: `${s.owned.length} film(s)`,
+        status: "ok",
+        trigger: "franchise auto-create",
+      });
+      log.info({ name: s.name }, "franchise auto-create");
+    } catch (err) {
+      log.error({ err, name: s.name }, "franchise auto-create failed");
+    }
+  }
+}
+
+/** Add newly-owned franchise films to the collections that already exist. */
+async function runAutoAddExisting(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
+  const cfg = getAutoAddExisting();
+  if (!cfg.enabled || !tmdbConfigured()) return;
+
+  const exclude = new Set(cfg.excludeRatingKeys);
+  const collections = await client.collections();
+  const index = await indexByIds(client);
+
+  for (const coll of collections) {
+    if (exclude.has(coll.ratingKey)) continue;
+    try {
+      const children = await client.collectionChildren(coll.ratingKey);
+      const resolved = await resolveTmdbCollection(coll.ratingKey, coll.title, children).catch(
+        () => undefined,
+      );
+      if (!resolved) continue;
+      const parts = await getTmdbCollectionParts(resolved.id);
+      if (!parts) continue;
+
+      const present = new Set(children.map((c) => c.tmdbId).filter(Boolean));
+      const toAdd: string[] = [];
+      for (const p of parts.parts) {
+        if (present.has(p.tmdbId)) continue;
+        const owned = index.get(`tmdb:${p.tmdbId}`);
+        if (owned) toAdd.push(owned.ratingKey);
+      }
+      if (toAdd.length === 0) continue;
+
+      await client.addToCollection(coll.ratingKey, toAdd);
+      recordActivity({
+        kind: "collection-updated",
+        title: coll.title,
+        detail: `added ${toAdd.length} newly-owned film(s)`,
+        status: "ok",
+        trigger: "auto-add to existing",
+      });
+      log.info({ collection: coll.title, added: toAdd.length }, "auto-add to existing");
+    } catch (err) {
+      log.error({ err, collection: coll.title }, "auto-add to existing failed");
+    }
+  }
+}
+
+/** Scheduler entry point — the preset automations, gated to once per day. */
+export async function runPresetAutomations(
+  client: PlexClient,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  const franchise = getFranchiseAutoCreate();
+  const autoAdd = getAutoAddExisting();
+  if (!franchise.enabled && !autoAdd.enabled) return;
+
+  const last = automationsLastRunAt();
+  if (last && Date.now() - last < DAILY) return;
+  setAppSetting("automations_presets_last_run", String(Date.now()));
+
+  try {
+    await runFranchiseAutoCreate(client, log);
+  } catch (err) {
+    log.error({ err }, "franchise auto-create sweep threw");
+  }
+  try {
+    await runAutoAddExisting(client, log);
+  } catch (err) {
+    log.error({ err }, "auto-add sweep threw");
+  }
+}

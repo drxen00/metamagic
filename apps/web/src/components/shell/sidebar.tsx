@@ -24,7 +24,7 @@ const NAV = [
   { href: "/", label: "Dashboard", icon: LayoutDashboard },
   { href: "/library", label: "Library", icon: Library },
   { href: "/collections", label: "Collections", icon: SquareStack },
-  { href: "/rules", label: "Rules", icon: Wand2 },
+  { href: "/rules", label: "Automations", icon: Wand2 },
   { href: "/overlays", label: "Overlays", icon: Layers },
   { href: "/activity", label: "Activity", icon: Activity },
   { href: "/settings", label: "Settings", icon: Settings },
