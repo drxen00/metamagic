@@ -5,19 +5,35 @@ import {
   getAppSetting,
   listMediuxWatches,
   recordMediuxWatchSync,
+  setAppSetting,
   upsertMediuxWatch,
   type MediuxWatchFull,
 } from "./db.js";
 import { applyMediux, extractSetUrl, type ProgressReporter } from "./mediux.js";
 import { evaluateRule } from "./rules.js";
 import { resolveTmdbCollection } from "./collection-match.js";
-import type { MediuxMatch, RuleChange } from "@metamagic/shared";
+import { recordActivity } from "./activity.js";
+import type { MediuxMatch, MediuxSyncMode, RuleChange } from "@metamagic/shared";
 
-/** Only auto-sync a watch this often, so a busy library doesn't thrash. */
-const AUTOSYNC_MIN_INTERVAL = 60 * 60 * 1000;
+const SCHEDULE_INTERVALS: Record<Exclude<MediuxSyncMode, "detect">, number> = {
+  hourly: 60 * 60 * 1000,
+  daily: 24 * 60 * 60 * 1000,
+  weekly: 7 * 24 * 60 * 60 * 1000,
+};
 
 export function mediuxAutoSyncEnabled(): boolean {
   return getAppSetting("mediux_autosync") === "true";
+}
+
+export function mediuxSyncMode(): MediuxSyncMode {
+  const v = getAppSetting("mediux_sync_mode");
+  return v === "hourly" || v === "daily" || v === "weekly" ? v : "detect";
+}
+
+/** When the scheduler last ran an auto-sync sweep (any mode). */
+export function mediuxLastCheckedAt(): number | undefined {
+  const v = getAppSetting("mediux_last_check");
+  return v ? Number(v) : undefined;
 }
 
 /**
@@ -173,14 +189,18 @@ export async function syncWatch(
   return "artwork re-applied";
 }
 
-/** Scheduler entry point: sync every enabled watch whose fingerprint changed. */
+/**
+ * Scheduler entry point. In `detect` mode a watch is synced when its
+ * fingerprint changed; in a scheduled mode it's re-applied on that cadence.
+ */
 export async function runMediuxAutoSync(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
   if (!mediuxAutoSyncEnabled()) return;
+  const mode = mediuxSyncMode();
   const now = Date.now();
+  setAppSetting("mediux_last_check", String(now));
 
   for (const watch of listMediuxWatches()) {
     if (!watch.enabled) continue;
-    if (watch.lastSyncedAt && now - watch.lastSyncedAt < AUTOSYNC_MIN_INTERVAL) continue;
 
     let current: string | undefined;
     try {
@@ -188,17 +208,36 @@ export async function runMediuxAutoSync(client: PlexClient, log: FastifyBaseLogg
     } catch {
       continue; // Plex unreachable for this item — try again next tick.
     }
-    // Nothing changed since we last looked — skip the expensive work.
-    if (watch.lastSignature && current === watch.lastSignature) continue;
 
-    log.info({ ratingKey: watch.ratingKey, title: watch.title }, "mediux auto-sync");
+    const changed = !watch.lastSignature || current !== watch.lastSignature;
+    const due =
+      mode === "detect"
+        ? changed
+        : !watch.lastSyncedAt || now - watch.lastSyncedAt >= SCHEDULE_INTERVALS[mode];
+    if (!due) continue;
+
+    log.info({ ratingKey: watch.ratingKey, title: watch.title, mode }, "mediux auto-sync");
     try {
-      const result = await syncWatch(client, watch, { force: false });
+      const result = await syncWatch(client, watch, { force: mode !== "detect" });
       const after = await computeSignature(client, watch).catch(() => current);
       recordMediuxWatchSync(watch.ratingKey, after, result);
+      recordActivity({
+        kind: "mediux-sync",
+        title: watch.title,
+        detail: result,
+        status: "ok",
+        trigger: mode === "detect" ? "detected a change" : `${mode} schedule`,
+      });
     } catch (err) {
       const message = err instanceof Error ? err.message : "sync failed";
       recordMediuxWatchSync(watch.ratingKey, watch.lastSignature, `Error: ${message}`);
+      recordActivity({
+        kind: "mediux-sync",
+        title: watch.title,
+        detail: message,
+        status: "error",
+        trigger: mode === "detect" ? "detected a change" : `${mode} schedule`,
+      });
       log.error({ err, ratingKey: watch.ratingKey }, "mediux auto-sync failed");
     }
   }

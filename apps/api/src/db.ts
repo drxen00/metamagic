@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "node:path";
 import type {
+  ActivityEvent,
   Badge,
   MediuxWatch,
   OverlayPreset,
@@ -120,6 +121,19 @@ db.exec(`
     collection_name TEXT,
     fetched_at INTEGER NOT NULL
   );
+
+  /* A rolling log of things MetaMagic did (auto-syncs, applies, overlays…),
+     shown on the Activity page alongside rule runs. */
+  CREATE TABLE IF NOT EXISTS activity_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    detail TEXT,
+    status TEXT NOT NULL,
+    trigger TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity_events(ts DESC);
 
   /* Collections/shows whose MediUX set we remember, for auto-sync of new
      content. Created when a MediUX set is applied from the item's picker. */
@@ -723,6 +737,41 @@ export function recordMediuxWatchSync(
 
 export function deleteMediuxWatch(ratingKey: string): void {
   db.prepare("DELETE FROM mediux_watches WHERE rating_key = ?").run(ratingKey);
+}
+
+// ---------- Activity feed ----------
+
+export function recordActivityEvent(e: Omit<ActivityEvent, "id" | "ts"> & { ts?: number }): void {
+  db.prepare(
+    "INSERT INTO activity_events (ts, kind, title, detail, status, trigger) VALUES (?, ?, ?, ?, ?, ?)",
+  ).run(e.ts ?? Date.now(), e.kind, e.title, e.detail ?? null, e.status, e.trigger ?? null);
+  // Keep the log bounded.
+  db.prepare(
+    "DELETE FROM activity_events WHERE id NOT IN (SELECT id FROM activity_events ORDER BY ts DESC LIMIT 500)",
+  ).run();
+}
+
+export function listActivityEvents(limit = 100): ActivityEvent[] {
+  const rows = db
+    .prepare("SELECT * FROM activity_events ORDER BY ts DESC LIMIT ?")
+    .all(limit) as {
+    id: number;
+    ts: number;
+    kind: string;
+    title: string;
+    detail: string | null;
+    status: string;
+    trigger: string | null;
+  }[];
+  return rows.map((r) => ({
+    id: r.id,
+    ts: r.ts,
+    kind: r.kind as ActivityEvent["kind"],
+    title: r.title,
+    detail: r.detail ?? undefined,
+    status: r.status === "error" ? "error" : "ok",
+    trigger: r.trigger ?? undefined,
+  }));
 }
 
 // ---------- TMDb movie → collection cache ----------

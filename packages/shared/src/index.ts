@@ -443,17 +443,54 @@ export interface MediuxWatch {
   updatedAt: number;
 }
 
+/**
+ * How auto-sync decides when to act:
+ * - `detect`: check often (~every 15 min) and act only when a collection/show
+ *   actually changed (a new movie or season appeared).
+ * - `hourly`/`daily`/`weekly`: re-apply on that fixed cadence regardless.
+ */
+export const mediuxSyncModeSchema = z.enum(["detect", "hourly", "daily", "weekly"]);
+export type MediuxSyncMode = z.infer<typeof mediuxSyncModeSchema>;
+
 export interface MediuxSyncState {
   /** The global auto-sync toggle. */
   enabled: boolean;
+  mode: MediuxSyncMode;
+  /** When the scheduler last looked (any mode). */
+  lastCheckedAt?: number;
   watches: MediuxWatch[];
 }
 
-export const mediuxSyncSettingsSchema = z.object({ enabled: z.boolean() });
+export const mediuxSyncSettingsSchema = z.object({
+  enabled: z.boolean().optional(),
+  mode: mediuxSyncModeSchema.optional(),
+});
 export type MediuxSyncSettingsInput = z.infer<typeof mediuxSyncSettingsSchema>;
 
 export const mediuxWatchUpdateSchema = z.object({ enabled: z.boolean() });
 export type MediuxWatchUpdateInput = z.infer<typeof mediuxWatchUpdateSchema>;
+
+// ---------- Activity feed ----------
+
+export type ActivityKind =
+  | "mediux-sync"
+  | "mediux-apply"
+  | "overlay-apply"
+  | "overlay-restore"
+  | "collection-created"
+  | "poster-set";
+
+/** A lightweight record of something MetaMagic did, for the Activity timeline. */
+export interface ActivityEvent {
+  id: number;
+  ts: number;
+  kind: ActivityKind;
+  title: string;
+  detail?: string;
+  status: "ok" | "error";
+  /** What set it off, e.g. "detected a change", "daily schedule", "manual". */
+  trigger?: string;
+}
 
 // ---------- Overlays ----------
 
@@ -517,6 +554,17 @@ export type ApplyOverlayInput = z.infer<typeof applyOverlaySchema>;
 export interface OverlayStatus {
   /** Items whose original poster MetaMagic has stored (i.e. overlaid) */
   overlaidCount: number;
+}
+
+/** Where one badge lands on the preview poster, as fractions (0–1) of its size. */
+export interface BadgeBox {
+  /** Index into the preset's badges array. */
+  index: number;
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
 }
 
 // ---------- Collection discovery ----------

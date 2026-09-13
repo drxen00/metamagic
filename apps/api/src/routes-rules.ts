@@ -4,6 +4,7 @@ import {
   mediuxSyncSettingsSchema,
   mediuxWatchUpdateSchema,
   ruleInputSchema,
+  type ActivityEvent,
   type AutomationSettings,
   type DiscoveredCollection,
   type MediuxMatch,
@@ -34,7 +35,14 @@ import {
   updateRule,
 } from "./db.js";
 import { applyChanges, evaluateRule, runRule } from "./rules.js";
-import { computeSignature, mediuxAutoSyncEnabled, syncWatch } from "./mediux-sync.js";
+import {
+  computeSignature,
+  mediuxAutoSyncEnabled,
+  mediuxLastCheckedAt,
+  mediuxSyncMode,
+  syncWatch,
+} from "./mediux-sync.js";
+import { listActivity, recordActivity } from "./activity.js";
 import { discoverCollections } from "./discover.js";
 import { searchKeywords } from "./tmdb.js";
 import { startJob, getJob } from "./jobs.js";
@@ -178,7 +186,15 @@ export function registerRuleRoutes(app: FastifyInstance): void {
       }
     }
 
-    return client.createCollection(sectionId, section.type, title, ratingKeys);
+    const created = await client.createCollection(sectionId, section.type, title, ratingKeys);
+    recordActivity({
+      kind: "collection-created",
+      title: `Created collection “${title}”`,
+      detail: `${ratingKeys.length} film(s)`,
+      status: "ok",
+      trigger: "manual",
+    });
+    return created;
   });
 
   // ---------- Keyword search (rule sources) ----------
@@ -223,15 +239,20 @@ export function registerRuleRoutes(app: FastifyInstance): void {
 
   // ---------- MediUX auto-sync ----------
 
-  app.get("/api/mediux/sync", async (): Promise<MediuxSyncState> => ({
+  const syncState = (): MediuxSyncState => ({
     enabled: mediuxAutoSyncEnabled(),
+    mode: mediuxSyncMode(),
+    lastCheckedAt: mediuxLastCheckedAt(),
     watches: listMediuxWatches().map(toWatchSummary),
-  }));
+  });
+
+  app.get("/api/mediux/sync", async (): Promise<MediuxSyncState> => syncState());
 
   app.put("/api/mediux/sync", async (req): Promise<MediuxSyncState> => {
     const input = mediuxSyncSettingsSchema.parse(req.body);
-    setAppSetting("mediux_autosync", input.enabled ? "true" : "");
-    return { enabled: mediuxAutoSyncEnabled(), watches: listMediuxWatches().map(toWatchSummary) };
+    if (input.enabled !== undefined) setAppSetting("mediux_autosync", input.enabled ? "true" : "");
+    if (input.mode !== undefined) setAppSetting("mediux_sync_mode", input.mode);
+    return syncState();
   });
 
   app.put<{ Params: { ratingKey: string } }>(
@@ -259,13 +280,35 @@ export function registerRuleRoutes(app: FastifyInstance): void {
       if (!watch) return reply.status(404).send({ error: "That MediUX watch no longer exists." });
       const client = requirePlex();
       const job = startJob<MediuxMatch>("mediux-sync", async (report) => {
-        const result = await syncWatch(client, watch, { force: true, report });
-        const after = await computeSignature(client, watch).catch(() => watch.lastSignature);
-        recordMediuxWatchSync(watch.ratingKey, after, result);
+        try {
+          const result = await syncWatch(client, watch, { force: true, report });
+          const after = await computeSignature(client, watch).catch(() => watch.lastSignature);
+          recordMediuxWatchSync(watch.ratingKey, after, result);
+          recordActivity({
+            kind: "mediux-sync",
+            title: watch.title,
+            detail: result,
+            status: "ok",
+            trigger: "manual",
+          });
+        } catch (err) {
+          recordActivity({
+            kind: "mediux-sync",
+            title: watch.title,
+            detail: err instanceof Error ? err.message : "sync failed",
+            status: "error",
+            trigger: "manual",
+          });
+          throw err;
+        }
       });
       return { jobId: job.id };
     },
   );
+
+  // ---------- Activity feed ----------
+
+  app.get("/api/activity", async (): Promise<ActivityEvent[]> => listActivity());
 
   // Job polling is shared with the rest of the app
   void getJob;
