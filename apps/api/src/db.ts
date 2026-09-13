@@ -131,7 +131,8 @@ db.exec(`
     title TEXT NOT NULL,
     detail TEXT,
     status TEXT NOT NULL,
-    trigger TEXT
+    trigger TEXT,
+    url TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_activity_ts ON activity_events(ts DESC);
 
@@ -151,6 +152,13 @@ db.exec(`
     updated_at INTEGER NOT NULL
   );
 `);
+
+// Lightweight migrations for columns added after a table first shipped.
+function ensureColumn(table: string, column: string, ddl: string): void {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+  if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+ensureColumn("activity_events", "url", "url TEXT");
 
 export interface StoredConnection {
   url: string;
@@ -743,8 +751,16 @@ export function deleteMediuxWatch(ratingKey: string): void {
 
 export function recordActivityEvent(e: Omit<ActivityEvent, "id" | "ts"> & { ts?: number }): void {
   db.prepare(
-    "INSERT INTO activity_events (ts, kind, title, detail, status, trigger) VALUES (?, ?, ?, ?, ?, ?)",
-  ).run(e.ts ?? Date.now(), e.kind, e.title, e.detail ?? null, e.status, e.trigger ?? null);
+    "INSERT INTO activity_events (ts, kind, title, detail, status, trigger, url) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).run(
+    e.ts ?? Date.now(),
+    e.kind,
+    e.title,
+    e.detail ?? null,
+    e.status,
+    e.trigger ?? null,
+    e.url ?? null,
+  );
   // Keep the log bounded.
   db.prepare(
     "DELETE FROM activity_events WHERE id NOT IN (SELECT id FROM activity_events ORDER BY ts DESC LIMIT 500)",
@@ -762,6 +778,7 @@ export function listActivityEvents(limit = 100): ActivityEvent[] {
     detail: string | null;
     status: string;
     trigger: string | null;
+    url: string | null;
   }[];
   return rows.map((r) => ({
     id: r.id,
@@ -771,6 +788,7 @@ export function listActivityEvents(limit = 100): ActivityEvent[] {
     detail: r.detail ?? undefined,
     status: r.status === "error" ? "error" : "ok",
     trigger: r.trigger ?? undefined,
+    url: r.url ?? undefined,
   }));
 }
 

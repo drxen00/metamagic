@@ -84,6 +84,12 @@ function DraggableBadges({
 }) {
   const layerRef = React.useRef<HTMLDivElement>(null);
   const [layerHeight, setLayerHeight] = React.useState(0);
+  // Live drag position, kept purely local so the handle tracks the pointer at
+  // 60fps — the server only hears about it once, on release (via onMove).
+  const [live, setLive] = React.useState<Record<number, { x: number; y: number }>>({});
+  const drag = React.useRef<
+    { index: number; grabX: number; grabY: number; w: number; h: number; x: number; y: number } | null
+  >(null);
 
   React.useEffect(() => {
     const el = layerRef.current;
@@ -93,46 +99,67 @@ function DraggableBadges({
     return () => ro.disconnect();
   }, []);
 
+  // Fresh boxes from the server already reflect any committed drag — drop the
+  // local overrides so the two never fight.
+  React.useEffect(() => setLive({}), [boxes]);
+
+  const clamp = (v: number, max: number) => Math.min(Math.max(v, 0), Math.max(0, max));
+
+  const onPointerDown = (e: React.PointerEvent<HTMLButtonElement>, box: BadgeBox) => {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    const r = e.currentTarget.getBoundingClientRect();
+    drag.current = {
+      index: box.index,
+      grabX: e.clientX - r.left,
+      grabY: e.clientY - r.top,
+      w: box.w,
+      h: box.h,
+      x: box.x,
+      y: box.y,
+    };
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = drag.current;
+    const layer = layerRef.current;
+    if (!d || !layer) return;
+    const rect = layer.getBoundingClientRect();
+    const x = clamp((e.clientX - d.grabX - rect.left) / rect.width, 1 - d.w);
+    const y = clamp((e.clientY - d.grabY - rect.top) / rect.height, 1 - d.h);
+    d.x = x;
+    d.y = y;
+    setLive((prev) => ({ ...prev, [d.index]: { x, y } }));
+  };
+
+  const endDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* pointer already released */
+    }
+    drag.current = null;
+    onMove(d.index, d.x, d.y);
+  };
+
   return (
     <div ref={layerRef} className="pointer-events-none absolute inset-0">
       {boxes.map((box) => {
-        const startDrag = (e: React.PointerEvent<HTMLButtonElement>) => {
-          e.preventDefault();
-          const layer = layerRef.current;
-          if (!layer) return;
-          const layerRect = layer.getBoundingClientRect();
-          const handleRect = e.currentTarget.getBoundingClientRect();
-          const grabX = e.clientX - handleRect.left;
-          const grabY = e.clientY - handleRect.top;
-          const maxX = 1 - box.w;
-          const maxY = 1 - box.h;
-
-          const move = (ev: PointerEvent) => {
-            const nx = (ev.clientX - grabX - layerRect.left) / layerRect.width;
-            const ny = (ev.clientY - grabY - layerRect.top) / layerRect.height;
-            onMove(
-              box.index,
-              Math.min(Math.max(nx, 0), Math.max(0, maxX)),
-              Math.min(Math.max(ny, 0), Math.max(0, maxY)),
-            );
-          };
-          const up = () => {
-            window.removeEventListener("pointermove", move);
-            window.removeEventListener("pointerup", up);
-          };
-          window.addEventListener("pointermove", move);
-          window.addEventListener("pointerup", up);
-        };
-
+        const pos = live[box.index] ?? { x: box.x, y: box.y };
         return (
           <button
             key={box.index}
             type="button"
-            onPointerDown={startDrag}
+            onPointerDown={(e) => onPointerDown(e, box)}
+            onPointerMove={onPointerMove}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
             title="Drag to position this badge"
             style={{
-              left: `${box.x * 100}%`,
-              top: `${box.y * 100}%`,
+              left: `${pos.x * 100}%`,
+              top: `${pos.y * 100}%`,
               width: `${box.w * 100}%`,
               height: `${box.h * 100}%`,
               backgroundColor: colors[box.index] ?? "#111827",

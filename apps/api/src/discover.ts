@@ -107,7 +107,7 @@ export async function discoverCollections(
   }
 
   const suggestions = [...buckets.values()]
-    .filter((b) => b.owned.length >= 2)
+    .filter((b) => b.owned.length >= 1)
     .map<DiscoveredCollection>((b) => ({
       tmdbCollectionId: b.id,
       name: b.name,

@@ -89,6 +89,14 @@ export function MediuxSyncPanel() {
     },
   });
 
+  const runAll = useMutation({
+    mutationFn: () => api<{ jobId: string }>("/api/mediux/sync/run-all", { method: "POST" }),
+    onSuccess: (res) => {
+      setRunJobId(res.jobId);
+      setRunningTitle("all tracked items");
+    },
+  });
+
   const onRunFinished = React.useCallback(() => {
     invalidate();
     qc.invalidateQueries({ queryKey: ["collections"] });
@@ -170,6 +178,23 @@ export function MediuxSyncPanel() {
                 <strong>schedule</strong> re-applies your sets at a fixed interval whether or not
                 anything changed.
               </p>
+            </div>
+          )}
+
+          {watches.length > 0 && (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-muted-foreground">
+                {watches.length} tracked · {watches.filter((w) => w.enabled).length} active
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                loading={runAll.isPending}
+                disabled={watches.every((w) => !w.enabled)}
+                onClick={() => runAll.mutate()}
+              >
+                <RotateCw className="h-3.5 w-3.5" /> Sync all now
+              </Button>
             </div>
           )}
 

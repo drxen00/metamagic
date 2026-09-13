@@ -8,12 +8,14 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  ExternalLink,
   FolderPlus,
   Hand,
   History,
   Image as ImageIcon,
   Layers,
   Minus,
+  Pencil,
   Plus,
   Sparkles,
   X,
@@ -54,7 +56,12 @@ const EVENT_META: Record<ActivityKind, { icon: typeof Sparkles; label: string }>
   "overlay-apply": { icon: Layers, label: "Overlay applied" },
   "overlay-restore": { icon: History, label: "Posters restored" },
   "collection-created": { icon: FolderPlus, label: "Collection created" },
+  "collection-deleted": { icon: FolderPlus, label: "Collection deleted" },
+  "collection-updated": { icon: FolderPlus, label: "Collection updated" },
   "poster-set": { icon: ImageIcon, label: "Poster changed" },
+  "art-set": { icon: ImageIcon, label: "Background changed" },
+  "metadata-edit": { icon: Pencil, label: "Metadata edited" },
+  "tpdb-set": { icon: ImageIcon, label: "ThePosterDB set" },
 };
 
 /** A non-rule automation event (auto-sync, apply, overlay…). */
@@ -85,6 +92,19 @@ function EventCard({ event }: { event: ActivityEvent }) {
               <>
                 <span aria-hidden>·</span>
                 <span className={cn(event.status === "error" && "text-destructive")}>{event.detail}</span>
+              </>
+            )}
+            {event.url && (
+              <>
+                <span aria-hidden>·</span>
+                <a
+                  href={event.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-primary underline-offset-2 hover:underline"
+                >
+                  source <ExternalLink className="h-3 w-3" />
+                </a>
               </>
             )}
           </p>

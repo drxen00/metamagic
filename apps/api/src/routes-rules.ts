@@ -306,6 +306,44 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     },
   );
 
+  // Sync every enabled watch now, one job with a combined transcript.
+  app.post("/api/mediux/sync/run-all", async (_req, reply) => {
+    const watches = listMediuxWatches().filter((w) => w.enabled);
+    if (watches.length === 0) {
+      return reply.status(400).send({ error: "No enabled MediUX items to sync." });
+    }
+    const client = requirePlex();
+    const job = startJob<MediuxMatch>("mediux-sync-all", async (report) => {
+      for (const w of watches) {
+        report.setCurrent(`Syncing ${w.title}…`);
+        try {
+          const result = await syncWatch(client, w, { force: true, report });
+          const after = await computeSignature(client, w).catch(() => w.lastSignature);
+          recordMediuxWatchSync(w.ratingKey, after, result);
+          recordActivity({
+            kind: "mediux-sync",
+            title: w.title,
+            detail: result,
+            status: "ok",
+            trigger: "manual (sync all)",
+          });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "sync failed";
+          recordMediuxWatchSync(w.ratingKey, w.lastSignature, `Error: ${msg}`);
+          recordActivity({
+            kind: "mediux-sync",
+            title: w.title,
+            detail: msg,
+            status: "error",
+            trigger: "manual (sync all)",
+          });
+          report.log(`✗ ${w.title} — ${msg}`);
+        }
+      }
+    });
+    return { jobId: job.id };
+  });
+
   // ---------- Activity feed ----------
 
   app.get("/api/activity", async (): Promise<ActivityEvent[]> => listActivity());
