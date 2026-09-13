@@ -475,8 +475,13 @@ export interface MediuxWatch {
   enabled: boolean;
   lastSyncedAt?: number;
   lastResult?: string;
+  /** When first tracked (stable — survives re-applies). */
+  createdAt: number;
   updatedAt: number;
 }
+
+export const mediuxSortSchema = z.enum(["title", "first-tracked", "recently-synced"]);
+export type MediuxSort = z.infer<typeof mediuxSortSchema>;
 
 /**
  * How auto-sync decides when to act:

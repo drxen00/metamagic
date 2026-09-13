@@ -391,13 +391,25 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     const client = requirePlex();
     const job = startJob<MediuxMatch>("mediux", async (report) => {
       const results = await applyMediux(client, input.yaml, report);
-      const applied = results.filter((r) => r.applied).length;
-      recordActivity({
-        kind: "mediux-apply",
-        title: `MediUX set — ${applied} of ${results.length} applied`,
-        status: "ok",
-        trigger: "manual",
-      });
+      const applied = results.filter((r) => r.applied);
+      // Name what it was for: the scoped collection/show if applied from a
+      // picker, otherwise the item(s) the set actually matched.
+      const scopeItem = input.scopeRatingKey
+        ? await client.item(input.scopeRatingKey).catch(() => undefined)
+        : undefined;
+      const appliedTitles = applied.map((r) => r.title).filter((t): t is string => !!t);
+      const title = scopeItem
+        ? `MediUX set → ${scopeItem.title}`
+        : appliedTitles.length === 1
+          ? `MediUX set → ${appliedTitles[0]}`
+          : `MediUX set — ${applied.length} of ${results.length} applied`;
+      const detail = scopeItem
+        ? `${applied.length} of ${results.length} applied`
+        : appliedTitles.length > 1
+          ? appliedTitles.slice(0, 4).join(", ") +
+            (appliedTitles.length > 4 ? ` +${appliedTitles.length - 4} more` : "")
+          : `${applied.length} of ${results.length} applied`;
+      recordActivity({ kind: "mediux-apply", title, detail, status: "ok", trigger: "manual" });
       // Applied from a collection/show picker → remember it for auto-sync.
       if (input.scopeRatingKey) {
         report.log("• remembering this MediUX set for auto-sync");
