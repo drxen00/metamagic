@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import type { MediuxSort, MediuxSyncMode, MediuxSyncState } from "@metamagic/shared";
 import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, imageUrl } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -254,15 +254,41 @@ export function MediuxSyncPanel() {
                     (!w.enabled || !enabled) && "opacity-60",
                   )}
                 >
-                  {w.type === "show" ? (
-                    <Tv className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  ) : (
-                    <Layers className="h-4 w-4 shrink-0 text-muted-foreground" />
-                  )}
+                  <div
+                    className={cn(
+                      "relative flex h-14 w-9 shrink-0 items-center justify-center overflow-hidden rounded border",
+                      w.type === "show"
+                        ? "border-violet-500/40 bg-violet-500/10"
+                        : "border-sky-500/40 bg-sky-500/10",
+                    )}
+                  >
+                    {w.thumb ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={imageUrl(w.thumb, 60, 90)}
+                        alt=""
+                        loading="lazy"
+                        className="h-full w-full object-cover"
+                      />
+                    ) : w.type === "show" ? (
+                      <Tv className="h-4 w-4 text-violet-400" />
+                    ) : (
+                      <Layers className="h-4 w-4 text-sky-400" />
+                    )}
+                  </div>
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="truncate font-medium">{w.title}</p>
-                      <Badge variant="outline">{w.type}</Badge>
+                      <Badge
+                        variant="outline"
+                        className={cn(
+                          w.type === "show"
+                            ? "border-violet-500/40 bg-violet-500/10 text-violet-300"
+                            : "border-sky-500/40 bg-sky-500/10 text-sky-300",
+                        )}
+                      >
+                        {w.type}
+                      </Badge>
                       {!w.enabled && <Badge variant="secondary">skipped</Badge>}
                     </div>
                     <p className="mt-0.5 text-xs text-muted-foreground">

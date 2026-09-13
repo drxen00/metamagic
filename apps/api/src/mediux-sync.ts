@@ -79,6 +79,7 @@ export async function rememberMediuxSet(
   let type: "collection" | "show";
   let ratingKey = scopeRatingKey;
   let title = item.title;
+  let thumb = item.thumb;
   let tmdbId: string | undefined;
 
   if (effectiveType === "collection") {
@@ -98,6 +99,7 @@ export async function rememberMediuxSet(
     type = "show";
     ratingKey = show.ratingKey;
     title = show.title;
+    thumb = show.thumb;
     tmdbId = show.tmdbId;
   } else {
     // Movies (and anything else) have no collection/show to keep in sync.
@@ -106,7 +108,7 @@ export async function rememberMediuxSet(
 
   const setUrl = extractSetUrl(yaml).url;
   const signature = await computeSignature(client, { ratingKey, type }).catch(() => undefined);
-  upsertMediuxWatch({ ratingKey, type, title, tmdbId, yaml, setUrl, signature });
+  upsertMediuxWatch({ ratingKey, type, title, thumb, tmdbId, yaml, setUrl, signature });
 }
 
 /** Build the transient collection-sync rule a watch stands in for. */
