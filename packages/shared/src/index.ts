@@ -478,7 +478,12 @@ export type ActivityKind =
   | "overlay-apply"
   | "overlay-restore"
   | "collection-created"
-  | "poster-set";
+  | "collection-deleted"
+  | "collection-updated"
+  | "poster-set"
+  | "art-set"
+  | "metadata-edit"
+  | "tpdb-set";
 
 /** A lightweight record of something MetaMagic did, for the Activity timeline. */
 export interface ActivityEvent {
@@ -490,6 +495,8 @@ export interface ActivityEvent {
   status: "ok" | "error";
   /** What set it off, e.g. "detected a change", "daily schedule", "manual". */
   trigger?: string;
+  /** A relevant link, e.g. the poster source that was applied. */
+  url?: string;
 }
 
 // ---------- Overlays ----------

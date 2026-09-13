@@ -17,6 +17,7 @@ import type {
   MediaItem,
   MediuxMatch,
   MissingCollectionItem,
+  TpdbSetResult,
 } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
 import { EDIT_TYPE_IDS, PlexError } from "./plex.js";
@@ -134,6 +135,13 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     if (Object.keys(params).length === 0) return { ok: true };
 
     await client.editMetadata(item.librarySectionId, typeId, req.params.ratingKey, params);
+    recordActivity({
+      kind: "metadata-edit",
+      title: item.title,
+      detail: "edited details",
+      status: "ok",
+      trigger: "manual",
+    });
     return { ok: true };
   });
 
@@ -152,6 +160,13 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       req.params.ratingKey,
       params,
     );
+    recordActivity({
+      kind: "collection-updated",
+      title: item.title,
+      detail: "edited collection details",
+      status: "ok",
+      trigger: "manual",
+    });
     return { ok: true };
   });
 
@@ -268,19 +283,29 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     const input = applyArtworkSchema.parse(req.body);
     const client = requirePlex();
     const item = await client.item(req.params.ratingKey);
+    let origin: { source: string; label: string; url?: string };
     if (/^https?:\/\//i.test(input.url)) {
       // Download server-side and push the bytes to Plex — more reliable than
       // having Plex fetch the URL (hotlink protection, HTML pages, redirects).
       const image = await fetchRemoteImage(input.url);
       await client.uploadArtwork(req.params.ratingKey, input.kind, image.buffer, image.contentType);
-      const origin = input.sourceUrl
+      origin = input.sourceUrl
         ? classifySourcePage(input.sourceUrl)
         : classifyArtworkUrl(input.url, item);
       recordArtworkSource(req.params.ratingKey, input.kind, origin.source, origin.label, origin.url);
     } else {
       await client.setArtwork(req.params.ratingKey, input.kind, input.url);
       recordArtworkSource(req.params.ratingKey, input.kind, "plex", "Plex artwork");
+      origin = { source: "plex", label: "Plex artwork" };
     }
+    recordActivity({
+      kind: input.kind === "poster" ? "poster-set" : "art-set",
+      title: item.title,
+      detail: `${input.kind} · ${origin.label}`,
+      status: "ok",
+      trigger: "manual",
+      url: origin.url ?? (/^https?:\/\//i.test(input.url) ? input.url : undefined),
+    });
     // The item now shows a new poster — invalidate any stale overlay backup so
     // previews and re-applied overlays build on the poster the user just chose.
     if (input.kind === "poster") forgetOriginalPoster(req.params.ratingKey);
@@ -312,6 +337,13 @@ export function registerEditingRoutes(app: FastifyInstance): void {
         req.headers["content-type"] ?? "image/jpeg",
       );
       recordArtworkSource(req.params.ratingKey, kind, "upload", "Uploaded file");
+      recordActivity({
+        kind: kind === "poster" ? "poster-set" : "art-set",
+        title: item.title,
+        detail: `${kind} · uploaded file`,
+        status: "ok",
+        trigger: "manual",
+      });
       if (kind === "poster") forgetOriginalPoster(req.params.ratingKey);
       if (item.librarySectionId) {
         await client.lockArtwork(
@@ -447,11 +479,24 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     async (req) => {
       const input = tpdbSetSchema.parse(req.body);
       const client = requirePlex();
-      const job = startJob("tpdb-set", (report) =>
-        applyTpdbSetToCollection(client, req.params.ratingKey, input.url, report).then(
-          () => undefined,
-        ),
-      );
+      const job = startJob<TpdbSetResult>("tpdb-set", async (report) => {
+        const results = await applyTpdbSetToCollection(
+          client,
+          req.params.ratingKey,
+          input.url,
+          report,
+        );
+        const applied = results.filter((r) => r.status === "applied").length;
+        const item = await client.item(req.params.ratingKey).catch(() => undefined);
+        recordActivity({
+          kind: "tpdb-set",
+          title: item?.title ?? "Collection",
+          detail: `${applied} of ${results.length} posters`,
+          status: "ok",
+          trigger: "manual",
+          url: input.url,
+        });
+      });
       return { jobId: job.id };
     },
   );

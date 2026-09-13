@@ -53,7 +53,7 @@ export function DiscoverPanel() {
     create.isSuccess && create.variables ? [create.variables.tmdbCollectionId] : [],
   );
 
-  const [minOwned, setMinOwned] = React.useState(2);
+  const [minOwned, setMinOwned] = React.useState(1);
   const [hideExisting, setHideExisting] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
   const visible = suggestions.filter(
@@ -68,9 +68,9 @@ export function DiscoverPanel() {
             <Sparkles className="h-4 w-4 text-primary" /> Collections you could create
           </CardTitle>
           <CardDescription>
-            Scans your movie libraries for franchises where you own two or more films. Ones without a
-            collection can be created; ones you already have are marked so they aren&apos;t suggested
-            again.
+            Scans your movie libraries for franchises you own films from. Ones without a collection
+            can be created; ones you already have are marked so they aren&apos;t suggested again. Use
+            the filter to require a minimum number of owned films.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -106,9 +106,9 @@ export function DiscoverPanel() {
                   Min films owned
                   <Input
                     type="number"
-                    min={2}
+                    min={1}
                     value={minOwned}
-                    onChange={(e) => setMinOwned(Math.max(2, Number(e.target.value) || 2))}
+                    onChange={(e) => setMinOwned(Math.max(1, Number(e.target.value) || 1))}
                     className="h-7 w-16"
                   />
                 </label>
@@ -237,7 +237,7 @@ export function DiscoverPanel() {
 
           {job?.status === "done" && suggestions.length === 0 && (
             <p className="text-sm text-muted-foreground">
-              No multi-film franchises found in your movie libraries yet.
+              No franchise films found in your movie libraries yet.
             </p>
           )}
         </CardContent>

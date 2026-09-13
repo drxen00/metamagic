@@ -16,6 +16,7 @@ import { registerEditingRoutes } from "./routes-editing.js";
 import { registerRuleRoutes } from "./routes-rules.js";
 import { registerOverlayRoutes } from "./routes-overlays.js";
 import { startScheduler } from "./scheduler.js";
+import { recordActivity } from "./activity.js";
 import { TmdbError } from "./tmdb.js";
 import { MediuxError } from "./mediux.js";
 
@@ -181,25 +182,64 @@ app.post("/api/collections", async (req) => {
   const sections = await client.sections();
   const section = sections.find((s) => s.id === input.sectionId);
   if (!section) throw new PlexError(`Library section ${input.sectionId} not found`, 404);
-  return client.createCollection(input.sectionId, section.type, input.title, input.itemRatingKeys);
+  const created = await client.createCollection(
+    input.sectionId,
+    section.type,
+    input.title,
+    input.itemRatingKeys,
+  );
+  recordActivity({
+    kind: "collection-created",
+    title: `Created collection “${input.title}”`,
+    detail: `${input.itemRatingKeys.length} item(s)`,
+    status: "ok",
+    trigger: "manual",
+  });
+  return created;
 });
 
 app.post<{ Params: { ratingKey: string } }>("/api/collections/:ratingKey/items", async (req) => {
   const input = collectionItemsSchema.parse(req.body);
-  await requirePlex().addToCollection(req.params.ratingKey, input.itemRatingKeys);
+  const client = requirePlex();
+  await client.addToCollection(req.params.ratingKey, input.itemRatingKeys);
+  const coll = await client.item(req.params.ratingKey).catch(() => undefined);
+  recordActivity({
+    kind: "collection-updated",
+    title: coll?.title ?? "Collection",
+    detail: `added ${input.itemRatingKeys.length} item(s)`,
+    status: "ok",
+    trigger: "manual",
+  });
   return { ok: true };
 });
 
 app.delete<{ Params: { ratingKey: string; itemRatingKey: string } }>(
   "/api/collections/:ratingKey/items/:itemRatingKey",
   async (req) => {
-    await requirePlex().removeFromCollection(req.params.ratingKey, req.params.itemRatingKey);
+    const client = requirePlex();
+    const coll = await client.item(req.params.ratingKey).catch(() => undefined);
+    await client.removeFromCollection(req.params.ratingKey, req.params.itemRatingKey);
+    recordActivity({
+      kind: "collection-updated",
+      title: coll?.title ?? "Collection",
+      detail: "removed an item",
+      status: "ok",
+      trigger: "manual",
+    });
     return { ok: true };
   },
 );
 
 app.delete<{ Params: { ratingKey: string } }>("/api/collections/:ratingKey", async (req) => {
-  await requirePlex().deleteCollection(req.params.ratingKey);
+  const client = requirePlex();
+  const coll = await client.item(req.params.ratingKey).catch(() => undefined);
+  await client.deleteCollection(req.params.ratingKey);
+  recordActivity({
+    kind: "collection-deleted",
+    title: `Deleted collection “${coll?.title ?? req.params.ratingKey}”`,
+    status: "ok",
+    trigger: "manual",
+  });
   return { ok: true };
 });
 
