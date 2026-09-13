@@ -13,6 +13,20 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.16.0",
+    title: "Discord + Radarr/Sonarr",
+    date: "2026-09-13",
+    added: [
+      "New Discord section with granular, per-category notifications.",
+      "Radarr & Sonarr integration: request missing collection movies for download, with a mandatory heads-up before any search.",
+      "A “downloading” badge on missing movies that are in the Radarr queue.",
+    ],
+    fixed: [
+      "MediUX Auto-Sync cards show a poster preview and color-coded collection/show tags.",
+      "The tracked list can be collapsed and sorted (title / first tracked / recently synced).",
+    ],
+  },
+  {
     version: "0.15.0",
     title: "Automations, reimagined",
     date: "2026-09-13",

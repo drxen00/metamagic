@@ -8,6 +8,7 @@ import {
   Check,
   ChevronDown,
   ChevronRight,
+  Download,
   ExternalLink,
   FolderPlus,
   Hand,
@@ -62,6 +63,7 @@ const EVENT_META: Record<ActivityKind, { icon: typeof Sparkles; label: string }>
   "art-set": { icon: ImageIcon, label: "Background changed" },
   "metadata-edit": { icon: Pencil, label: "Metadata edited" },
   "tpdb-set": { icon: ImageIcon, label: "ThePosterDB set" },
+  "download-request": { icon: Download, label: "Download requested" },
 };
 
 /** A non-rule automation event (auto-sync, apply, overlay…). */

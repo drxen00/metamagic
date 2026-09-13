@@ -13,6 +13,7 @@ import type {
 import { api } from "@/lib/api";
 import { Topbar } from "@/components/shell/topbar";
 import { MediuxImportPanel } from "@/components/library/mediux-import-panel";
+import { ArrSettingsCards } from "@/components/settings/arr-settings";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -184,6 +185,7 @@ export default function SettingsPage() {
         </Card>
 
         <IntegrationsCard />
+        <ArrSettingsCards />
         <AutomationsCard />
         <MediuxImportCard />
         <AccountCard />

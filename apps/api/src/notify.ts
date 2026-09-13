@@ -11,6 +11,7 @@ const DEFAULT_EVENTS: DiscordEvents = {
   overlays: false,
   collections: false,
   artwork: false,
+  downloads: true,
 };
 
 export function getDiscordEvents(): DiscordEvents {
@@ -37,6 +38,8 @@ function categoryFor(kind: ActivityEvent["kind"]): keyof DiscordEvents {
     case "collection-updated":
     case "collection-deleted":
       return "collections";
+    case "download-request":
+      return "downloads";
     default:
       return "artwork";
   }

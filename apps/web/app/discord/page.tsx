@@ -18,6 +18,7 @@ const EVENT_ROWS: { key: keyof DiscordEvents; label: string; hint: string }[] = 
   { key: "collections", label: "Collection changes", hint: "Collections created, updated, or deleted" },
   { key: "overlays", label: "Overlays", hint: "Overlay apply and restore" },
   { key: "artwork", label: "Poster & metadata changes", hint: "Poster/background updates and metadata edits" },
+  { key: "downloads", label: "Download requests", hint: "Radarr/Sonarr add & search requests" },
 ];
 
 export default function DiscordPage() {
