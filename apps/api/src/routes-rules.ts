@@ -65,6 +65,7 @@ function toWatchSummary(w: ReturnType<typeof listMediuxWatches>[number]): Mediux
     ratingKey: w.ratingKey,
     type: w.type,
     title: w.title,
+    thumb: w.thumb,
     tmdbId: w.tmdbId,
     setUrl: w.setUrl,
     enabled: w.enabled,

@@ -142,6 +142,7 @@ db.exec(`
     rating_key TEXT PRIMARY KEY,
     type TEXT NOT NULL,
     title TEXT NOT NULL,
+    thumb TEXT,
     tmdb_id TEXT,
     yaml TEXT NOT NULL,
     set_url TEXT,
@@ -161,6 +162,7 @@ function ensureColumn(table: string, column: string, ddl: string): void {
 }
 ensureColumn("activity_events", "url", "url TEXT");
 ensureColumn("mediux_watches", "created_at", "created_at INTEGER");
+ensureColumn("mediux_watches", "thumb", "thumb TEXT");
 
 export interface StoredConnection {
   url: string;
@@ -647,6 +649,7 @@ interface MediuxWatchRow {
   rating_key: string;
   type: string;
   title: string;
+  thumb: string | null;
   tmdb_id: string | null;
   yaml: string;
   set_url: string | null;
@@ -669,6 +672,7 @@ function toWatch(row: MediuxWatchRow): MediuxWatchFull {
     ratingKey: row.rating_key,
     type: row.type === "show" ? "show" : "collection",
     title: row.title,
+    thumb: row.thumb ?? undefined,
     tmdbId: row.tmdb_id ?? undefined,
     yaml: row.yaml,
     setUrl: row.set_url ?? undefined,
@@ -700,6 +704,7 @@ export function upsertMediuxWatch(input: {
   ratingKey: string;
   type: "collection" | "show";
   title: string;
+  thumb?: string;
   tmdbId?: string;
   yaml: string;
   setUrl?: string;
@@ -707,11 +712,12 @@ export function upsertMediuxWatch(input: {
 }): void {
   db.prepare(
     `INSERT INTO mediux_watches
-       (rating_key, type, title, tmdb_id, yaml, set_url, enabled, last_signature, created_at, updated_at)
-     VALUES (@ratingKey, @type, @title, @tmdbId, @yaml, @setUrl, 1, @signature, @now, @now)
+       (rating_key, type, title, thumb, tmdb_id, yaml, set_url, enabled, last_signature, created_at, updated_at)
+     VALUES (@ratingKey, @type, @title, @thumb, @tmdbId, @yaml, @setUrl, 1, @signature, @now, @now)
      ON CONFLICT(rating_key) DO UPDATE SET
        type = excluded.type,
        title = excluded.title,
+       thumb = COALESCE(excluded.thumb, mediux_watches.thumb),
        tmdb_id = COALESCE(excluded.tmdb_id, mediux_watches.tmdb_id),
        yaml = excluded.yaml,
        set_url = COALESCE(excluded.set_url, mediux_watches.set_url),
@@ -721,6 +727,7 @@ export function upsertMediuxWatch(input: {
     ratingKey: input.ratingKey,
     type: input.type,
     title: input.title,
+    thumb: input.thumb ?? null,
     tmdbId: input.tmdbId ?? null,
     yaml: input.yaml,
     setUrl: input.setUrl ?? null,

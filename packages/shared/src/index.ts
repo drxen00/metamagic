@@ -467,6 +467,8 @@ export interface MediuxWatch {
   ratingKey: string;
   type: "collection" | "show";
   title: string;
+  /** Plex poster path for a small preview thumbnail. */
+  thumb?: string;
   /** TMDb collection id (collections) or TMDb id (shows), when resolved. */
   tmdbId?: string;
   /** The MediUX set page the YAML came from, when derivable. */
