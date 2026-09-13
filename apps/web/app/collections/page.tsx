@@ -3,12 +3,14 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ExternalLink, Pencil, Plus, Search, SquareStack, Trash2, X } from "lucide-react";
+import { Check, Download, ExternalLink, Pencil, Plus, Search, SquareStack, Trash2, X } from "lucide-react";
 import type {
+  ArrSettings,
   CollectionCompleteness,
   EditCollectionInput,
   LibrarySection,
   MediaItem,
+  MissingCollectionItem,
   PagedResult,
   PlexCollection,
   TmdbCollectionOption,
@@ -26,6 +28,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ItemDrawer } from "@/components/library/item-drawer";
 import { PosterPicker } from "@/components/library/poster-picker";
 import { ProvenanceNote } from "@/components/library/provenance-note";
+import { ArrRequestDialog } from "@/components/library/arr-request-dialog";
 import { DiscoverPanel } from "@/components/rules/discover-panel";
 
 export default function CollectionsPage() {
@@ -67,6 +70,35 @@ export default function CollectionsPage() {
   const [hideNotInLibrary, setHideNotInLibrary] = React.useState(false);
   const [hideUnreleased, setHideUnreleased] = React.useState(true);
   const [linkOpen, setLinkOpen] = React.useState(false);
+
+  // Radarr/Sonarr: request missing movies for download.
+  const { data: arr } = useQuery({
+    queryKey: ["arr-settings"],
+    queryFn: () => api<ArrSettings>("/api/settings/arr"),
+  });
+  const radarrOn = arr?.radarr.configured ?? false;
+  const { data: arrQueue } = useQuery({
+    queryKey: ["arr-queue"],
+    queryFn: () => api<{ tmdbIds: string[] }>("/api/arr/queue"),
+    enabled: radarrOn && !!openKey,
+    refetchInterval: 30_000,
+  });
+  const downloading = new Set(arrQueue?.tmdbIds ?? []);
+  const [requestItem, setRequestItem] = React.useState<MissingCollectionItem | null>(null);
+  const [requestError, setRequestError] = React.useState<string | null>(null);
+  const requestDownload = useMutation({
+    mutationFn: (m: MissingCollectionItem) =>
+      api("/api/arr/request", {
+        method: "POST",
+        body: JSON.stringify({ kind: "radarr", id: m.tmdbId, title: m.title }),
+      }),
+    onSuccess: () => {
+      setRequestItem(null);
+      setRequestError(null);
+      qc.invalidateQueries({ queryKey: ["arr-queue"] });
+    },
+    onError: (e) => setRequestError((e as Error).message),
+  });
   const visibleMissing =
     completeness?.missing.filter(
       (m) => !(hideNotInLibrary && !m.ratingKey) && !(hideUnreleased && m.unreleased),
@@ -536,6 +568,21 @@ export default function CollectionsPage() {
                           >
                             <Plus className="h-3.5 w-3.5" /> Add
                           </Button>
+                        ) : downloading.has(m.tmdbId) ? (
+                          <Badge variant="secondary" className="gap-1">
+                            <Download className="h-3 w-3" /> downloading
+                          </Badge>
+                        ) : radarrOn && !m.unreleased ? (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              setRequestError(null);
+                              setRequestItem(m);
+                            }}
+                          >
+                            <Download className="h-3.5 w-3.5" /> Request
+                          </Button>
                         ) : (
                           <Badge variant="outline">not in library</Badge>
                         )}
@@ -674,6 +721,16 @@ export default function CollectionsPage() {
           </Button>
         </div>
       </Dialog>
+
+      <ArrRequestDialog
+        open={!!requestItem}
+        target="Radarr"
+        title={requestItem ? `${requestItem.title}${requestItem.year ? ` (${requestItem.year})` : ""}` : ""}
+        loading={requestDownload.isPending}
+        error={requestError}
+        onClose={() => setRequestItem(null)}
+        onConfirm={() => requestItem && requestDownload.mutate(requestItem)}
+      />
     </main>
   );
 }

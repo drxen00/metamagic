@@ -15,6 +15,7 @@ import { registerAuth } from "./auth.js";
 import { registerEditingRoutes } from "./routes-editing.js";
 import { registerRuleRoutes } from "./routes-rules.js";
 import { registerOverlayRoutes } from "./routes-overlays.js";
+import { registerArrRoutes } from "./routes-arr.js";
 import { startScheduler } from "./scheduler.js";
 import { recordActivity } from "./activity.js";
 import { TmdbError } from "./tmdb.js";
@@ -75,6 +76,7 @@ registerAuth(app);
 registerEditingRoutes(app);
 registerRuleRoutes(app);
 registerOverlayRoutes(app);
+registerArrRoutes(app);
 
 app.get("/api/health", async () => ({ status: "ok", app: "metamagic" }));
 

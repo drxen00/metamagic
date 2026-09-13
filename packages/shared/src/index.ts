@@ -466,6 +466,8 @@ export interface DiscordEvents {
   collections: boolean;
   /** Poster/background/metadata changes. */
   artwork: boolean;
+  /** Radarr/Sonarr download requests. */
+  downloads: boolean;
 }
 
 export interface DiscordSettings {
@@ -480,6 +482,7 @@ export const discordEventsSchema = z.object({
   overlays: z.boolean(),
   collections: z.boolean(),
   artwork: z.boolean(),
+  downloads: z.boolean(),
 });
 
 export const discordSettingsInputSchema = z.object({
@@ -487,6 +490,48 @@ export const discordSettingsInputSchema = z.object({
   events: discordEventsSchema.partial().optional(),
 });
 export type DiscordSettingsInput = z.infer<typeof discordSettingsInputSchema>;
+
+// ---------- Radarr / Sonarr ----------
+
+export interface ArrIntegration {
+  configured: boolean;
+  url?: string;
+  rootFolder?: string;
+  qualityProfileId?: number;
+}
+
+export interface ArrSettings {
+  radarr: ArrIntegration;
+  sonarr: ArrIntegration;
+}
+
+export interface ArrOptions {
+  rootFolders: { path: string; freeSpace?: number }[];
+  qualityProfiles: { id: number; name: string }[];
+}
+
+export const arrConfigInputSchema = z.object({
+  kind: z.enum(["radarr", "sonarr"]),
+  url: z.string().optional(),
+  apiKey: z.string().optional(),
+  rootFolder: z.string().optional(),
+  qualityProfileId: z.number().int().positive().optional(),
+});
+export type ArrConfigInput = z.infer<typeof arrConfigInputSchema>;
+
+export const arrTestSchema = z.object({
+  kind: z.enum(["radarr", "sonarr"]),
+  url: z.string().optional(),
+  apiKey: z.string().optional(),
+});
+
+/** A download request: `id` is a TMDb id for radarr, a TVDb id for sonarr. */
+export const arrRequestSchema = z.object({
+  kind: z.enum(["radarr", "sonarr"]),
+  id: z.string().min(1),
+  title: z.string().optional(),
+});
+export type ArrRequestInput = z.infer<typeof arrRequestSchema>;
 
 export interface KeywordOption {
   id: number;
@@ -563,7 +608,8 @@ export type ActivityKind =
   | "poster-set"
   | "art-set"
   | "metadata-edit"
-  | "tpdb-set";
+  | "tpdb-set"
+  | "download-request";
 
 /** A lightweight record of something MetaMagic did, for the Activity timeline. */
 export interface ActivityEvent {
