@@ -44,7 +44,7 @@ import { fetchRemoteImage } from "./remote-image.js";
 import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
-import { rememberBoxset, rememberMediuxSet } from "./mediux-sync.js";
+import { rememberMediuxSet } from "./mediux-sync.js";
 import { recordActivity } from "./activity.js";
 
 function editTypeId(itemType: string): number {
@@ -410,13 +410,8 @@ export function registerEditingRoutes(app: FastifyInstance): void {
             (appliedTitles.length > 4 ? ` +${appliedTitles.length - 4} more` : "")
           : `${applied.length} of ${results.length} applied`;
       recordActivity({ kind: "mediux-apply", title, detail, status: "ok", trigger: "manual" });
-      if (input.scopeType === "boxset") {
-        // A whole boxset → remember every collection it re-postered.
-        report.setCurrent("Tracking the boxset's collections for auto-sync…");
-        const tracked = await rememberBoxset(client, results, input.yaml).catch(() => 0);
-        report.log(`• tracking ${tracked} collection(s) from this boxset for auto-sync`);
-      } else if (input.scopeRatingKey) {
-        // Applied from a collection/show picker → remember it for auto-sync.
+      // Applied from a collection/show picker → remember it for auto-sync.
+      if (input.scopeRatingKey) {
         report.log("• remembering this MediUX set for auto-sync");
         await rememberMediuxSet(client, input.scopeRatingKey, input.scopeType, input.yaml).catch(
           (err) => report.log(`✗ couldn't remember set — ${err instanceof Error ? err.message : "failed"}`),

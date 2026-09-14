@@ -205,7 +205,7 @@ export const mediuxImportSchema = z.object({
    * franchise movies / seasons get re-styled automatically.
    */
   scopeRatingKey: z.string().optional(),
-  scopeType: z.enum(["collection", "show", "season", "movie", "boxset"]).optional(),
+  scopeType: z.enum(["collection", "show", "season", "movie"]).optional(),
 });
 export type MediuxImportInput = z.infer<typeof mediuxImportSchema>;
 
