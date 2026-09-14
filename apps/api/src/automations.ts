@@ -10,6 +10,18 @@ import { recordActivity } from "./activity.js";
 
 const DAILY = 24 * 60 * 60 * 1000;
 
+/** Minimal progress sink so "Run now" can stream a transcript to a job. */
+export interface AutomationReporter {
+  setCurrent: (line: string) => void;
+  log: (line: string) => void;
+}
+
+interface RunOpts {
+  report?: AutomationReporter;
+  /** Manual "Run now" — bypasses the enabled toggle. */
+  manual?: boolean;
+}
+
 function readJson<T>(key: string, fallback: T): T {
   const raw = getAppSetting(key);
   if (!raw) return fallback;
@@ -50,12 +62,22 @@ export function automationsLastRunAt(): number | undefined {
 }
 
 /** Create collections for owned TMDb franchises that don't have one yet. */
-async function runFranchiseAutoCreate(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
+export async function runFranchiseAutoCreate(
+  client: PlexClient,
+  log: FastifyBaseLogger,
+  opts: RunOpts = {},
+): Promise<void> {
   const cfg = getFranchiseAutoCreate();
-  if (!cfg.enabled || !tmdbConfigured()) return;
+  if (!opts.manual && !cfg.enabled) return;
+  if (!tmdbConfigured()) {
+    opts.report?.log("✗ Add a TMDb API key in Settings first.");
+    return;
+  }
 
+  opts.report?.setCurrent("Scanning your movie libraries for franchises…");
   const suggestions = await discoverCollections(client);
   const sections = await client.sections();
+  let created = 0;
   for (const s of suggestions) {
     if (s.existing || s.owned.length < cfg.minMovies) continue;
     const section = sections.find((sec) => sec.id === s.sectionId);
@@ -67,6 +89,8 @@ async function runFranchiseAutoCreate(client: PlexClient, log: FastifyBaseLogger
         s.name,
         s.owned.map((o) => o.ratingKey),
       );
+      created++;
+      opts.report?.log(`✓ created “${s.name}” (${s.owned.length} films)`);
       recordActivity({
         kind: "collection-created",
         title: `Created collection “${s.name}”`,
@@ -79,20 +103,32 @@ async function runFranchiseAutoCreate(client: PlexClient, log: FastifyBaseLogger
       log.error({ err, name: s.name }, "franchise auto-create failed");
     }
   }
+  opts.report?.log(`• done — ${created} collection(s) created`);
 }
 
 /** Add newly-owned franchise films to the collections that already exist. */
-async function runAutoAddExisting(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
+export async function runAutoAddExisting(
+  client: PlexClient,
+  log: FastifyBaseLogger,
+  opts: RunOpts = {},
+): Promise<void> {
   const cfg = getAutoAddExisting();
-  if (!cfg.enabled || !tmdbConfigured()) return;
+  if (!opts.manual && !cfg.enabled) return;
+  if (!tmdbConfigured()) {
+    opts.report?.log("✗ Add a TMDb API key in Settings first.");
+    return;
+  }
 
   const exclude = new Set(cfg.excludeRatingKeys);
+  opts.report?.setCurrent("Scanning your libraries…");
   const collections = await client.collections();
   const index = await indexByIds(client);
+  let added = 0;
 
   for (const coll of collections) {
     if (exclude.has(coll.ratingKey)) continue;
     try {
+      opts.report?.setCurrent(`Checking “${coll.title}”…`);
       const children = await client.collectionChildren(coll.ratingKey);
       const resolved = await resolveTmdbCollection(coll.ratingKey, coll.title, children).catch(
         () => undefined,
@@ -111,6 +147,8 @@ async function runAutoAddExisting(client: PlexClient, log: FastifyBaseLogger): P
       if (toAdd.length === 0) continue;
 
       await client.addToCollection(coll.ratingKey, toAdd);
+      added += toAdd.length;
+      opts.report?.log(`✓ ${coll.title} — added ${toAdd.length}`);
       recordActivity({
         kind: "collection-updated",
         title: coll.title,
@@ -123,6 +161,7 @@ async function runAutoAddExisting(client: PlexClient, log: FastifyBaseLogger): P
       log.error({ err, collection: coll.title }, "auto-add to existing failed");
     }
   }
+  opts.report?.log(`• done — ${added} film(s) added`);
 }
 
 function normTitle(s: string): string {
@@ -130,9 +169,21 @@ function normTitle(s: string): string {
 }
 
 /** Create/maintain a collection of owned movies for each configured studio. */
-async function runStudioAutomation(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
+export async function runStudioAutomation(
+  client: PlexClient,
+  log: FastifyBaseLogger,
+  opts: RunOpts = {},
+): Promise<void> {
   const cfg = getStudioAutomation();
-  if (!cfg.enabled || cfg.studios.length === 0 || !tmdbConfigured()) return;
+  if (!opts.manual && !cfg.enabled) return;
+  if (cfg.studios.length === 0) {
+    opts.report?.log("• no studios configured — add one in settings.");
+    return;
+  }
+  if (!tmdbConfigured()) {
+    opts.report?.log("✗ Add a TMDb API key in Settings first.");
+    return;
+  }
 
   const index = await indexByIds(client);
   const collections = await client.collections();
@@ -142,11 +193,15 @@ async function runStudioAutomation(client: PlexClient, log: FastifyBaseLogger): 
 
   for (const studio of cfg.studios) {
     try {
+      opts.report?.setCurrent(`Checking ${studio.name}…`);
       const movies = await discoverByCompany(studio.companyId);
       const owned = movies
         .map((m) => index.get(`tmdb:${m.tmdbId}`))
         .filter((hit): hit is NonNullable<typeof hit> => !!hit && hit.type === "movie");
-      if (owned.length < studio.minMovies) continue;
+      if (owned.length < studio.minMovies) {
+        opts.report?.log(`· ${studio.name} — only ${owned.length} owned (min ${studio.minMovies})`);
+        continue;
+      }
 
       const ownedKeys = owned.map((o) => o.ratingKey);
       const existing = byName.get(normTitle(studio.name));
@@ -154,8 +209,12 @@ async function runStudioAutomation(client: PlexClient, log: FastifyBaseLogger): 
         const children = await client.collectionChildren(existing.ratingKey);
         const present = new Set(children.map((c) => c.ratingKey));
         const toAdd = ownedKeys.filter((k) => !present.has(k));
-        if (toAdd.length === 0) continue;
+        if (toAdd.length === 0) {
+          opts.report?.log(`· ${studio.name} — already complete`);
+          continue;
+        }
         await client.addToCollection(existing.ratingKey, toAdd);
+        opts.report?.log(`✓ ${studio.name} — added ${toAdd.length}`);
         recordActivity({
           kind: "collection-updated",
           title: studio.name,
@@ -174,6 +233,7 @@ async function runStudioAutomation(client: PlexClient, log: FastifyBaseLogger): 
           ownedKeys,
         );
         byName.set(normTitle(studio.name), { ratingKey: created.ratingKey });
+        opts.report?.log(`✓ created “${studio.name}” (${ownedKeys.length} films)`);
         recordActivity({
           kind: "collection-created",
           title: `Created collection “${studio.name}”`,
@@ -187,6 +247,7 @@ async function runStudioAutomation(client: PlexClient, log: FastifyBaseLogger): 
       log.error({ err, studio: studio.name }, "studio automation failed");
     }
   }
+  opts.report?.log("• done");
 }
 
 /** Scheduler entry point — the preset automations, gated to once per day. */

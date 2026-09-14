@@ -2,13 +2,51 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Building2, FolderPlus, Layers, Pause, Play, Plus, Search, Settings, Trash2 } from "lucide-react";
+import {
+  Building2,
+  FolderPlus,
+  Layers,
+  Pause,
+  Play,
+  Plus,
+  RotateCw,
+  Search,
+  Settings,
+  Trash2,
+} from "lucide-react";
 import type { AutomationPresets, PlexCollection, StudioAutomation } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { Input, Label } from "@/components/ui/input";
+import { JobLog } from "./job-log";
+
+/** Small "Run now" button + progress dialog, shared by the preset cards. */
+function useRunNow(path: string, invalidate: () => void) {
+  const [jobId, setJobId] = React.useState<string | null>(null);
+  const run = useMutation({
+    mutationFn: () => api<{ jobId: string }>(path, { method: "POST" }),
+    onSuccess: (r) => setJobId(r.jobId),
+  });
+  const dialog = (title: string) => (
+    <Dialog open={!!jobId} onClose={() => setJobId(null)} title={title} className="max-w-2xl">
+      {jobId && <JobLog jobId={jobId} onFinished={invalidate} doneLabel="Finished" />}
+      <div className="mt-4 flex justify-end">
+        <Button variant="outline" onClick={() => setJobId(null)}>
+          Close
+        </Button>
+      </div>
+    </Dialog>
+  );
+  const button = (
+    <Button size="sm" variant="outline" loading={run.isPending} onClick={() => run.mutate()}>
+      <RotateCw className="h-3.5 w-3.5" /> Run now
+    </Button>
+  );
+  return { button, dialog };
+}
 
 /**
  * The predefined "automatic" automations — toggle-and-forget collection
@@ -26,7 +64,13 @@ export function PresetAutomations() {
     queryFn: () => api<AutomationPresets>("/api/automations/presets"),
   });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["automation-presets"] });
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["automation-presets"] });
+    qc.invalidateQueries({ queryKey: ["collections"] });
+  };
+
+  const franchiseRun = useRunNow("/api/automations/franchise/run", invalidate);
+  const autoAddRun = useRunNow("/api/automations/auto-add/run", invalidate);
 
   const saveFranchise = useMutation({
     mutationFn: (body: { enabled: boolean; minMovies: number }) =>
@@ -75,6 +119,7 @@ export function PresetAutomations() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-1.5">
+              {franchiseRun.button}
               <Button
                 variant={franchise.enabled ? "default" : "outline"}
                 loading={saveFranchise.isPending}
@@ -129,6 +174,7 @@ export function PresetAutomations() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-1.5">
+              {autoAddRun.button}
               <Button
                 variant={autoAdd.enabled ? "default" : "outline"}
                 loading={saveAutoAdd.isPending && !saveAutoAdd.variables?.excludeRatingKeys}
@@ -189,6 +235,9 @@ export function PresetAutomations() {
       </Card>
 
       <StudioCard />
+
+      {franchiseRun.dialog("Creating franchise collections")}
+      {autoAddRun.dialog("Adding to existing collections")}
     </div>
   );
 }
@@ -210,6 +259,11 @@ function StudioCard() {
     mutationFn: (body: StudioAutomation) =>
       api("/api/automations/studio", { method: "PUT", body: JSON.stringify(body) }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["automation-presets"] }),
+  });
+
+  const studioRun = useRunNow("/api/automations/studio/run", () => {
+    qc.invalidateQueries({ queryKey: ["automation-presets"] });
+    qc.invalidateQueries({ queryKey: ["collections"] });
   });
 
   React.useEffect(() => {
@@ -243,6 +297,7 @@ function StudioCard() {
     });
 
   return (
+    <>
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -256,6 +311,7 @@ function StudioCard() {
             </CardDescription>
           </div>
           <div className="flex items-center gap-1.5">
+            {studioRun.button}
             <Button
               variant={studio.enabled ? "default" : "outline"}
               loading={save.isPending && save.variables?.enabled !== studio.enabled}
@@ -335,5 +391,7 @@ function StudioCard() {
         </CardContent>
       )}
     </Card>
+    {studioRun.dialog("Building studio collections")}
+    </>
   );
 }

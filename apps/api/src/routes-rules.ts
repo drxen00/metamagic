@@ -55,6 +55,9 @@ import {
   getAutoAddExisting,
   getFranchiseAutoCreate,
   getStudioAutomation,
+  runAutoAddExisting,
+  runFranchiseAutoCreate,
+  runStudioAutomation,
   setAutoAddExisting,
   setFranchiseAutoCreate,
   setStudioAutomation,
@@ -425,6 +428,31 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     const q = req.query.q?.trim();
     if (!q) return [];
     return searchCompanies(q);
+  });
+
+  // Run a preset automation right now (bypasses the daily gate + enabled toggle).
+  app.post("/api/automations/franchise/run", async () => {
+    const client = requirePlex();
+    const job = startJob("franchise-run", (report) =>
+      runFranchiseAutoCreate(client, app.log, { report, manual: true }),
+    );
+    return { jobId: job.id };
+  });
+
+  app.post("/api/automations/auto-add/run", async () => {
+    const client = requirePlex();
+    const job = startJob("auto-add-run", (report) =>
+      runAutoAddExisting(client, app.log, { report, manual: true }),
+    );
+    return { jobId: job.id };
+  });
+
+  app.post("/api/automations/studio/run", async () => {
+    const client = requirePlex();
+    const job = startJob("studio-run", (report) =>
+      runStudioAutomation(client, app.log, { report, manual: true }),
+    );
+    return { jobId: job.id };
   });
 
   // ---------- Activity feed ----------
