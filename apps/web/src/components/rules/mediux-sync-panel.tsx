@@ -119,7 +119,7 @@ export function MediuxSyncPanel() {
   const mode: MediuxSyncMode = data?.mode ?? "detect";
   const watches = data?.watches ?? [];
 
-  const [listCollapsed, setListCollapsed] = React.useState(false);
+  const [listCollapsed, setListCollapsed] = React.useState(true);
   const [sort, setSort] = React.useState<MediuxSort>("title");
   const sortedWatches = React.useMemo(() => {
     const list = [...watches];
