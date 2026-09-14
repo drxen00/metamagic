@@ -564,6 +564,14 @@ export const arrTestSchema = z.object({
   apiKey: z.string().optional(),
 });
 
+/** Seasons a show is missing vs TMDb, for the Sonarr request UI. */
+export interface ShowCompleteness {
+  tvdbId?: string;
+  sonarrConfigured: boolean;
+  /** Aired seasons (>=1) present on TMDb but not in Plex. */
+  missing: { season: number; name?: string; airDate?: string }[];
+}
+
 /** A download request: `id` is a TMDb id for radarr, a TVDb id for sonarr. */
 export const arrRequestSchema = z.object({
   kind: z.enum(["radarr", "sonarr"]),
