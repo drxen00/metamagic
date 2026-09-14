@@ -69,6 +69,25 @@ export function setArrConfig(
   if (patch.qualityProfileId !== undefined) setAppSetting(k.profile, String(patch.qualityProfileId));
 }
 
+/** Auto-request missing collection movies from Radarr — gated by an ack. */
+export function getArrAutoRequest(): { enabled: boolean; acknowledged: boolean } {
+  return {
+    enabled: getAppSetting("arr_auto_request") === "true",
+    acknowledged: getAppSetting("arr_auto_request_ack") === "true",
+  };
+}
+
+export function setArrAutoRequest(patch: { enabled?: boolean; acknowledged?: boolean }): void {
+  if (patch.acknowledged !== undefined) {
+    setAppSetting("arr_auto_request_ack", patch.acknowledged ? "true" : "");
+  }
+  if (patch.enabled !== undefined) {
+    // Can only enable once acknowledged.
+    const ack = getAppSetting("arr_auto_request_ack") === "true";
+    setAppSetting("arr_auto_request", patch.enabled && ack ? "true" : "");
+  }
+}
+
 async function arrFetch<T>(
   cfg: ArrConfig,
   kind: ArrKind,

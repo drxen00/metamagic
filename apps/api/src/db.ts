@@ -122,6 +122,13 @@ db.exec(`
     fetched_at INTEGER NOT NULL
   );
 
+  /* TMDb ids MetaMagic has already auto-requested from Radarr, so an auto
+     sweep never re-requests the same movie. */
+  CREATE TABLE IF NOT EXISTS arr_requested (
+    tmdb_id TEXT PRIMARY KEY,
+    requested_at INTEGER NOT NULL
+  );
+
   /* A rolling log of things MetaMagic did (auto-syncs, applies, overlays…),
      shown on the Activity page alongside rule runs. */
   CREATE TABLE IF NOT EXISTS activity_events (
@@ -756,6 +763,18 @@ export function recordMediuxWatchSync(
 
 export function deleteMediuxWatch(ratingKey: string): void {
   db.prepare("DELETE FROM mediux_watches WHERE rating_key = ?").run(ratingKey);
+}
+
+// ---------- Radarr auto-request dedupe ----------
+
+export function arrAlreadyRequested(tmdbId: string): boolean {
+  return !!db.prepare("SELECT 1 FROM arr_requested WHERE tmdb_id = ?").get(tmdbId);
+}
+
+export function markArrRequested(tmdbId: string): void {
+  db.prepare(
+    "INSERT INTO arr_requested (tmdb_id, requested_at) VALUES (?, ?) ON CONFLICT(tmdb_id) DO NOTHING",
+  ).run(tmdbId, Date.now());
 }
 
 // ---------- Activity feed ----------

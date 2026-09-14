@@ -4,7 +4,7 @@ import { getAppSetting, listRules } from "./db.js";
 import { plexClient } from "./client-store.js";
 import { runRule } from "./rules.js";
 import { runMediuxAutoSync } from "./mediux-sync.js";
-import { runPresetAutomations } from "./automations.js";
+import { runAutoRequest, runPresetAutomations } from "./automations.js";
 import { runWatcherTick } from "./watcher.js";
 
 const TICK_MS = 15 * 60 * 1000;
@@ -62,6 +62,13 @@ export function startScheduler(log: FastifyBaseLogger): void {
       await runPresetAutomations(client, log);
     } catch (err) {
       log.error({ err }, "preset automations threw");
+    }
+
+    // Auto-request missing collection movies from Radarr (daily, opt-in).
+    try {
+      await runAutoRequest(client, log);
+    } catch (err) {
+      log.error({ err }, "auto-request threw");
     }
   };
 

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import {
+  arrAutoRequestSchema,
   arrConfigInputSchema,
   arrRequestSchema,
   arrTestSchema,
@@ -10,10 +11,12 @@ import {
   arrQualityProfiles,
   arrRootFolders,
   arrTest,
+  getArrAutoRequest,
   getArrConfig,
   getArrPublic,
   radarrQueueTmdbIds,
   radarrRequest,
+  setArrAutoRequest,
   setArrConfig,
   sonarrRequest,
   type ArrConfig,
@@ -24,6 +27,7 @@ import { recordActivity } from "./activity.js";
 const settings = (): ArrSettings => ({
   radarr: getArrPublic("radarr"),
   sonarr: getArrPublic("sonarr"),
+  autoRequest: getArrAutoRequest(),
 });
 
 export function registerArrRoutes(app: FastifyInstance): void {
@@ -37,6 +41,12 @@ export function registerArrRoutes(app: FastifyInstance): void {
       rootFolder: input.rootFolder,
       qualityProfileId: input.qualityProfileId,
     });
+    return settings();
+  });
+
+  app.put("/api/settings/arr/auto-request", async (req): Promise<ArrSettings> => {
+    const input = arrAutoRequestSchema.parse(req.body);
+    setArrAutoRequest(input);
     return settings();
   });
 

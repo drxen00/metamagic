@@ -7,6 +7,8 @@ import { indexByIds } from "./mediux.js";
 import { resolveTmdbCollection } from "./collection-match.js";
 import { discoverByCompany, getTmdbCollectionParts, tmdbConfigured } from "./tmdb.js";
 import { recordActivity } from "./activity.js";
+import { arrAlreadyRequested, markArrRequested } from "./db.js";
+import { getArrAutoRequest, getArrConfig, radarrRequest } from "./arr.js";
 
 const DAILY = 24 * 60 * 60 * 1000;
 
@@ -257,6 +259,65 @@ export function presetAutomationsAnyEnabled(): boolean {
     getAutoAddExisting().enabled ||
     getStudioAutomation().enabled
   );
+}
+
+/**
+ * Auto-request missing (released, unowned) collection movies from Radarr.
+ * Opt-in + acknowledged only; deduped so a movie is requested at most once, and
+ * capped per sweep so it never dumps a giant search all at once. Daily-gated.
+ */
+export async function runAutoRequest(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
+  const auto = getArrAutoRequest();
+  if (!auto.enabled || !auto.acknowledged || !tmdbConfigured()) return;
+  const cfg = getArrConfig("radarr");
+  if (!cfg?.rootFolder || !cfg.qualityProfileId) return;
+
+  const last = getAppSetting("arr_auto_request_last");
+  if (last && Date.now() - Number(last) < DAILY) return;
+  setAppSetting("arr_auto_request_last", String(Date.now()));
+
+  const CAP = 40;
+  const today = new Date().toISOString().slice(0, 10);
+  const index = await indexByIds(client);
+  const collections = await client.collections();
+  let requested = 0;
+
+  for (const coll of collections) {
+    if (requested >= CAP) break;
+    try {
+      const children = await client.collectionChildren(coll.ratingKey);
+      const resolved = await resolveTmdbCollection(coll.ratingKey, coll.title, children).catch(
+        () => undefined,
+      );
+      if (!resolved) continue;
+      const parts = await getTmdbCollectionParts(resolved.id);
+      if (!parts) continue;
+
+      for (const p of parts.parts) {
+        if (requested >= CAP) break;
+        if (index.get(`tmdb:${p.tmdbId}`)) continue; // already owned
+        if (!p.releaseDate || p.releaseDate > today) continue; // unreleased
+        if (arrAlreadyRequested(p.tmdbId)) continue;
+        try {
+          await radarrRequest(cfg, p.tmdbId);
+          markArrRequested(p.tmdbId);
+          requested++;
+          recordActivity({
+            kind: "download-request",
+            title: `Requested “${p.title}”`,
+            detail: `Radarr (auto) — for ${coll.title}`,
+            status: "ok",
+            trigger: "auto",
+          });
+        } catch (err) {
+          log.error({ err, tmdbId: p.tmdbId }, "auto-request failed");
+        }
+      }
+    } catch (err) {
+      log.error({ err, collection: coll.title }, "auto-request collection failed");
+    }
+  }
+  if (requested > 0) log.info({ requested }, "radarr auto-request sweep");
 }
 
 /**
