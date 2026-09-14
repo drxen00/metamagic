@@ -250,18 +250,29 @@ export async function runStudioAutomation(
   opts.report?.log("• done");
 }
 
-/** Scheduler entry point — the preset automations, gated to once per day. */
+/** True when any preset automation is switched on. */
+export function presetAutomationsAnyEnabled(): boolean {
+  return (
+    getFranchiseAutoCreate().enabled ||
+    getAutoAddExisting().enabled ||
+    getStudioAutomation().enabled
+  );
+}
+
+/**
+ * Scheduler entry point — the preset automations. Gated to once per day on the
+ * time-based tick; `ignoreGate` lets the change-watcher fire them the moment new
+ * content appears.
+ */
 export async function runPresetAutomations(
   client: PlexClient,
   log: FastifyBaseLogger,
+  opts: { ignoreGate?: boolean } = {},
 ): Promise<void> {
-  const franchise = getFranchiseAutoCreate();
-  const autoAdd = getAutoAddExisting();
-  const studio = getStudioAutomation();
-  if (!franchise.enabled && !autoAdd.enabled && !studio.enabled) return;
+  if (!presetAutomationsAnyEnabled()) return;
 
   const last = automationsLastRunAt();
-  if (last && Date.now() - last < DAILY) return;
+  if (!opts.ignoreGate && last && Date.now() - last < DAILY) return;
   setAppSetting("automations_presets_last_run", String(Date.now()));
 
   try {

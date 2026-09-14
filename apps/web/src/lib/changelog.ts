@@ -13,6 +13,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.18.0",
+    title: "Instant automations",
+    date: "2026-09-14",
+    added: [
+      "Automations now react within ~a minute of new content landing in Plex, instead of waiting for a daily sweep.",
+      "A “Run now” button on every preset automation (franchise, auto-add, studio) to trigger it on demand with a live transcript.",
+    ],
+  },
+  {
     version: "0.17.0",
     title: "Studio collections",
     date: "2026-09-14",
