@@ -1,11 +1,11 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { AutoAddExisting, FranchiseAutoCreate } from "@metamagic/shared";
+import type { AutoAddExisting, FranchiseAutoCreate, StudioAutomation } from "@metamagic/shared";
 import type { PlexClient } from "./plex.js";
 import { getAppSetting, setAppSetting } from "./db.js";
 import { discoverCollections } from "./discover.js";
 import { indexByIds } from "./mediux.js";
 import { resolveTmdbCollection } from "./collection-match.js";
-import { getTmdbCollectionParts, tmdbConfigured } from "./tmdb.js";
+import { discoverByCompany, getTmdbCollectionParts, tmdbConfigured } from "./tmdb.js";
 import { recordActivity } from "./activity.js";
 
 const DAILY = 24 * 60 * 60 * 1000;
@@ -34,6 +34,14 @@ export function getAutoAddExisting(): AutoAddExisting {
 
 export function setAutoAddExisting(cfg: AutoAddExisting): void {
   setAppSetting("auto_add_existing", JSON.stringify(cfg));
+}
+
+export function getStudioAutomation(): StudioAutomation {
+  return readJson<StudioAutomation>("auto_studio", { enabled: false, studios: [] });
+}
+
+export function setStudioAutomation(cfg: StudioAutomation): void {
+  setAppSetting("auto_studio", JSON.stringify(cfg));
 }
 
 export function automationsLastRunAt(): number | undefined {
@@ -117,6 +125,70 @@ async function runAutoAddExisting(client: PlexClient, log: FastifyBaseLogger): P
   }
 }
 
+function normTitle(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+/** Create/maintain a collection of owned movies for each configured studio. */
+async function runStudioAutomation(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
+  const cfg = getStudioAutomation();
+  if (!cfg.enabled || cfg.studios.length === 0 || !tmdbConfigured()) return;
+
+  const index = await indexByIds(client);
+  const collections = await client.collections();
+  const byName = new Map<string, { ratingKey: string }>(
+    collections.map((c) => [normTitle(c.title), { ratingKey: c.ratingKey }]),
+  );
+
+  for (const studio of cfg.studios) {
+    try {
+      const movies = await discoverByCompany(studio.companyId);
+      const owned = movies
+        .map((m) => index.get(`tmdb:${m.tmdbId}`))
+        .filter((hit): hit is NonNullable<typeof hit> => !!hit && hit.type === "movie");
+      if (owned.length < studio.minMovies) continue;
+
+      const ownedKeys = owned.map((o) => o.ratingKey);
+      const existing = byName.get(normTitle(studio.name));
+      if (existing) {
+        const children = await client.collectionChildren(existing.ratingKey);
+        const present = new Set(children.map((c) => c.ratingKey));
+        const toAdd = ownedKeys.filter((k) => !present.has(k));
+        if (toAdd.length === 0) continue;
+        await client.addToCollection(existing.ratingKey, toAdd);
+        recordActivity({
+          kind: "collection-updated",
+          title: studio.name,
+          detail: `added ${toAdd.length} ${studio.name} film(s)`,
+          status: "ok",
+          trigger: "studio automation",
+        });
+      } else {
+        const sectionId = owned[0].sectionId;
+        const section = (await client.sections()).find((s) => s.id === sectionId);
+        if (!section) continue;
+        const created = await client.createCollection(
+          sectionId,
+          section.type,
+          studio.name,
+          ownedKeys,
+        );
+        byName.set(normTitle(studio.name), { ratingKey: created.ratingKey });
+        recordActivity({
+          kind: "collection-created",
+          title: `Created collection “${studio.name}”`,
+          detail: `${ownedKeys.length} film(s)`,
+          status: "ok",
+          trigger: "studio automation",
+        });
+      }
+      log.info({ studio: studio.name }, "studio automation");
+    } catch (err) {
+      log.error({ err, studio: studio.name }, "studio automation failed");
+    }
+  }
+}
+
 /** Scheduler entry point — the preset automations, gated to once per day. */
 export async function runPresetAutomations(
   client: PlexClient,
@@ -124,7 +196,8 @@ export async function runPresetAutomations(
 ): Promise<void> {
   const franchise = getFranchiseAutoCreate();
   const autoAdd = getAutoAddExisting();
-  if (!franchise.enabled && !autoAdd.enabled) return;
+  const studio = getStudioAutomation();
+  if (!franchise.enabled && !autoAdd.enabled && !studio.enabled) return;
 
   const last = automationsLastRunAt();
   if (last && Date.now() - last < DAILY) return;
@@ -139,5 +212,10 @@ export async function runPresetAutomations(
     await runAutoAddExisting(client, log);
   } catch (err) {
     log.error({ err }, "auto-add sweep threw");
+  }
+  try {
+    await runStudioAutomation(client, log);
+  } catch (err) {
+    log.error({ err }, "studio automation sweep threw");
   }
 }

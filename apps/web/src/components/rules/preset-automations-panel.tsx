@@ -2,8 +2,8 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { FolderPlus, Layers, Pause, Play, Settings } from "lucide-react";
-import type { AutomationPresets, PlexCollection } from "@metamagic/shared";
+import { Building2, FolderPlus, Layers, Pause, Play, Plus, Search, Settings, Trash2 } from "lucide-react";
+import type { AutomationPresets, PlexCollection, StudioAutomation } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -187,6 +187,153 @@ export function PresetAutomations() {
           </CardContent>
         )}
       </Card>
+
+      <StudioCard />
     </div>
+  );
+}
+
+/** Auto-create/maintain collections of movies by studio (TMDb company). */
+function StudioCard() {
+  const qc = useQueryClient();
+  const [show, setShow] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [debounced, setDebounced] = React.useState("");
+
+  const { data } = useQuery({
+    queryKey: ["automation-presets"],
+    queryFn: () => api<AutomationPresets>("/api/automations/presets"),
+  });
+  const studio = data?.studio ?? { enabled: false, studios: [] };
+
+  const save = useMutation({
+    mutationFn: (body: StudioAutomation) =>
+      api("/api/automations/studio", { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automation-presets"] }),
+  });
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const { data: companies } = useQuery({
+    queryKey: ["tmdb-companies", debounced],
+    queryFn: () => api<{ id: number; name: string }[]>(`/api/tmdb/companies?q=${encodeURIComponent(debounced)}`),
+    enabled: show && debounced.trim().length > 1,
+  });
+
+  const addStudio = (c: { id: number; name: string }) => {
+    if (studio.studios.some((s) => s.companyId === c.id)) return;
+    save.mutate({
+      ...studio,
+      studios: [...studio.studios, { companyId: c.id, name: c.name, minMovies: 3 }],
+    });
+    setQuery("");
+    setDebounced("");
+  };
+
+  const removeStudio = (companyId: number) =>
+    save.mutate({ ...studio, studios: studio.studios.filter((s) => s.companyId !== companyId) });
+
+  const setMin = (companyId: number, minMovies: number) =>
+    save.mutate({
+      ...studio,
+      studios: studio.studios.map((s) => (s.companyId === companyId ? { ...s, minMovies } : s)),
+    });
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-primary" /> Studio collections
+            </CardTitle>
+            <CardDescription className="mt-1 max-w-2xl">
+              Keep a collection of everything you own from a studio — e.g. DreamWorks, A24, Pixar.
+              MetaMagic adds new arrivals from each studio automatically.
+            </CardDescription>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <Button
+              variant={studio.enabled ? "default" : "outline"}
+              loading={save.isPending && save.variables?.enabled !== studio.enabled}
+              onClick={() => save.mutate({ ...studio, enabled: !studio.enabled })}
+            >
+              {studio.enabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              {studio.enabled ? "On" : "Off"}
+            </Button>
+            <Button variant="ghost" size="icon" title="Studios" onClick={() => setShow((s) => !s)}>
+              <Settings className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      {show && (
+        <CardContent className="space-y-3">
+          <div className="relative">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              placeholder="Add a studio… (e.g. DreamWorks)"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              className="pl-9"
+            />
+            {debounced.trim().length > 1 && companies && companies.length > 0 && (
+              <div className="absolute z-20 mt-1 max-h-56 w-full space-y-0.5 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+                {companies.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => addStudio(c)}
+                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-secondary/60"
+                  >
+                    <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="truncate">{c.name}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {studio.studios.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No studios yet — search above to add one.</p>
+          ) : (
+            <div className="space-y-1.5">
+              {studio.studios.map((s) => (
+                <div
+                  key={s.companyId}
+                  className="flex flex-wrap items-center gap-3 rounded-md border border-border/60 bg-secondary/20 p-2.5"
+                >
+                  <span className="min-w-0 flex-1 truncate font-medium">{s.name}</span>
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    Min films
+                    <Input
+                      type="number"
+                      min={1}
+                      max={50}
+                      defaultValue={s.minMovies}
+                      onBlur={(e) => {
+                        const v = Math.min(50, Math.max(1, Number(e.target.value) || 1));
+                        if (v !== s.minMovies) setMin(s.companyId, v);
+                      }}
+                      className="h-7 w-16"
+                    />
+                  </label>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    title="Remove studio"
+                    onClick={() => removeStudio(s.companyId)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      )}
+    </Card>
   );
 }

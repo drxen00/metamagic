@@ -127,6 +127,33 @@ export async function searchKeywords(query: string): Promise<{ id: number; name:
   return (data.results ?? []).slice(0, 15);
 }
 
+/** Search TMDb production companies (studios) by name. */
+export async function searchCompanies(query: string): Promise<{ id: number; name: string }[]> {
+  const data = await tmdbFetch<{ results?: { id: number; name: string }[] }>(
+    `/search/company?query=${encodeURIComponent(query)}`,
+  );
+  return (data.results ?? []).slice(0, 15).map((c) => ({ id: c.id, name: c.name }));
+}
+
+/** Every movie from a production company (paged, capped like keyword discovery). */
+export async function discoverByCompany(
+  companyId: number,
+  maxPages = 5,
+): Promise<(ResolvedTitle & { tmdbId: string })[]> {
+  const out: (ResolvedTitle & { tmdbId: string })[] = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await tmdbFetch<TmdbDiscover>(
+      `/discover/movie?with_companies=${companyId}&page=${page}&include_adult=false`,
+    );
+    for (const r of data.results ?? []) {
+      const resolved = toResolved(r);
+      if (resolved) out.push({ ...resolved, tmdbId: String(r.id) });
+    }
+    if (page >= (data.total_pages ?? 1)) break;
+  }
+  return out;
+}
+
 interface TmdbDiscover {
   page: number;
   total_pages: number;
