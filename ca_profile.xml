@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<CommunityApplications>
+  <Profile>MetaMagic is a Plex library manager with a first-class GUI — the power of Kometa-style library management with granular per-item control and mass operations, no YAML required. Browse huge libraries, edit metadata and artwork, build automatic collections (franchise, studio, MediUX auto-sync), burn in poster overlays, and request missing movies from Radarr/Sonarr. This repository holds the official Community Applications template and the public support tracker.</Profile>
+  <Icon>https://raw.githubusercontent.com/drxen00/metamagic/main/docker/icon.png</Icon>
+  <WebPage>https://github.com/drxen00/metamagic</WebPage>
+  <Forum>https://github.com/drxen00/metamagic/issues</Forum>
+</CommunityApplications>
