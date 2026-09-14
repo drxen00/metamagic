@@ -4,6 +4,7 @@ import {
   autoAddExistingSchema,
   discordSettingsInputSchema,
   franchiseAutoCreateSchema,
+  studioAutomationSchema,
   mediuxSyncSettingsSchema,
   mediuxWatchUpdateSchema,
   ruleInputSchema,
@@ -53,11 +54,13 @@ import {
   automationsLastRunAt,
   getAutoAddExisting,
   getFranchiseAutoCreate,
+  getStudioAutomation,
   setAutoAddExisting,
   setFranchiseAutoCreate,
+  setStudioAutomation,
 } from "./automations.js";
 import { discoverCollections } from "./discover.js";
-import { searchKeywords } from "./tmdb.js";
+import { searchCompanies, searchKeywords } from "./tmdb.js";
 import { startJob, getJob } from "./jobs.js";
 import { getDiscordEvents, sendTestNotification } from "./notify.js";
 import { automationsPaused } from "./scheduler.js";
@@ -393,20 +396,35 @@ export function registerRuleRoutes(app: FastifyInstance): void {
 
   // ---------- Preset automations ----------
 
-  app.get("/api/automations/presets", async (): Promise<AutomationPresets> => ({
+  const presets = (): AutomationPresets => ({
     franchise: getFranchiseAutoCreate(),
     autoAdd: getAutoAddExisting(),
+    studio: getStudioAutomation(),
     lastRunAt: automationsLastRunAt(),
-  }));
+  });
+
+  app.get("/api/automations/presets", async (): Promise<AutomationPresets> => presets());
 
   app.put("/api/automations/franchise", async (req): Promise<AutomationPresets> => {
     setFranchiseAutoCreate(franchiseAutoCreateSchema.parse(req.body));
-    return { franchise: getFranchiseAutoCreate(), autoAdd: getAutoAddExisting(), lastRunAt: automationsLastRunAt() };
+    return presets();
   });
 
   app.put("/api/automations/auto-add", async (req): Promise<AutomationPresets> => {
     setAutoAddExisting(autoAddExistingSchema.parse(req.body));
-    return { franchise: getFranchiseAutoCreate(), autoAdd: getAutoAddExisting(), lastRunAt: automationsLastRunAt() };
+    return presets();
+  });
+
+  app.put("/api/automations/studio", async (req): Promise<AutomationPresets> => {
+    setStudioAutomation(studioAutomationSchema.parse(req.body));
+    return presets();
+  });
+
+  // Studio (production company) search for the studio-automation picker.
+  app.get<{ Querystring: { q?: string } }>("/api/tmdb/companies", async (req) => {
+    const q = req.query.q?.trim();
+    if (!q) return [];
+    return searchCompanies(q);
   });
 
   // ---------- Activity feed ----------

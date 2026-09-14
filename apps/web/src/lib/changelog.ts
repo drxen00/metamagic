@@ -13,6 +13,14 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.17.0",
+    title: "Studio collections",
+    date: "2026-09-14",
+    added: [
+      "New automation: auto-create and maintain collections by studio (DreamWorks, A24, Pixar…). Search a studio, set a minimum, and MetaMagic keeps the collection stocked with what you own.",
+    ],
+  },
+  {
     version: "0.16.0",
     title: "Discord + Radarr/Sonarr",
     date: "2026-09-13",

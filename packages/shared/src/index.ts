@@ -425,12 +425,43 @@ export interface AutoAddExisting {
   excludeRatingKeys: string[];
 }
 
+/** One studio → collection mapping. */
+export interface StudioCollection {
+  /** TMDb production company id. */
+  companyId: number;
+  /** Studio name; also the collection title. */
+  name: string;
+  /** Only create/keep when at least this many of the studio's films are owned. */
+  minMovies: number;
+}
+
+/** Auto-create/maintain collections of movies by studio (TMDb company). */
+export interface StudioAutomation {
+  enabled: boolean;
+  studios: StudioCollection[];
+}
+
 export interface AutomationPresets {
   franchise: FranchiseAutoCreate;
   autoAdd: AutoAddExisting;
+  studio: StudioAutomation;
   /** When the preset automations last ran (they're gated to once a day). */
   lastRunAt?: number;
 }
+
+export const studioAutomationSchema = z.object({
+  enabled: z.boolean(),
+  studios: z
+    .array(
+      z.object({
+        companyId: z.number().int().positive(),
+        name: z.string().min(1),
+        minMovies: z.number().int().min(1).max(50),
+      }),
+    )
+    .max(50),
+});
+export type StudioAutomationInput = z.infer<typeof studioAutomationSchema>;
 
 export const franchiseAutoCreateSchema = z.object({
   enabled: z.boolean(),
