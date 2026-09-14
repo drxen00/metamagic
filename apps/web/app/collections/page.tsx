@@ -29,7 +29,6 @@ import { ItemDrawer } from "@/components/library/item-drawer";
 import { PosterPicker } from "@/components/library/poster-picker";
 import { ProvenanceNote } from "@/components/library/provenance-note";
 import { ArrRequestDialog } from "@/components/library/arr-request-dialog";
-import { MediuxBoxsetCard } from "@/components/library/mediux-boxset-card";
 import { DiscoverPanel } from "@/components/rules/discover-panel";
 
 export default function CollectionsPage() {
@@ -208,7 +207,6 @@ export default function CollectionsPage() {
       />
       <div className="space-y-6 p-6 pb-24">
         <DiscoverPanel />
-        <MediuxBoxsetCard />
 
         {isLoading ? (
           <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-4">

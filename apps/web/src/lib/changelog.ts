@@ -13,14 +13,6 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: "0.19.0",
-    title: "MediUX boxsets",
-    date: "2026-09-14",
-    added: [
-      "Import a whole MediUX boxset (a bundle of like sets, e.g. all DreamWorks): paste its YAML on the Collections page to re-poster every matching collection at once and keep them all in auto-sync.",
-    ],
-  },
-  {
     version: "0.18.0",
     title: "Instant automations",
     date: "2026-09-14",
