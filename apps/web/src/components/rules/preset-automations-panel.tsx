@@ -14,7 +14,12 @@ import {
   Settings,
   Trash2,
 } from "lucide-react";
-import type { AutomationPresets, PlexCollection, StudioAutomation } from "@metamagic/shared";
+import type {
+  AutomationPresets,
+  CompanyOption,
+  PlexCollection,
+  StudioAutomation,
+} from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -271,9 +276,10 @@ function StudioCard() {
     return () => clearTimeout(t);
   }, [query]);
 
-  const { data: companies } = useQuery({
+  const { data: companies, isFetching } = useQuery({
     queryKey: ["tmdb-companies", debounced],
-    queryFn: () => api<{ id: number; name: string }[]>(`/api/tmdb/companies?q=${encodeURIComponent(debounced)}`),
+    queryFn: () =>
+      api<CompanyOption[]>(`/api/tmdb/companies?q=${encodeURIComponent(debounced)}`),
     enabled: show && debounced.trim().length > 1,
   });
 
@@ -336,20 +342,69 @@ function StudioCard() {
               onChange={(e) => setQuery(e.target.value)}
               className="pl-9"
             />
-            {debounced.trim().length > 1 && companies && companies.length > 0 && (
-              <div className="absolute z-20 mt-1 max-h-56 w-full space-y-0.5 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
-                {companies.map((c) => (
-                  <button
-                    key={c.id}
-                    onClick={() => addStudio(c)}
-                    className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-secondary/60"
-                  >
-                    <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">{c.name}</span>
-                  </button>
-                ))}
+            {debounced.trim().length > 1 && (isFetching || companies) ? (
+              <div className="absolute z-20 mt-1 max-h-80 w-full space-y-0.5 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+                {!companies && isFetching ? (
+                  <p className="px-2 py-2 text-xs text-muted-foreground">Searching studios…</p>
+                ) : (
+                  companies?.map((c) => {
+                    const added = studio.studios.some((s) => s.companyId === c.id);
+                    return (
+                      <button
+                        key={c.id}
+                        disabled={added}
+                        onClick={() => addStudio(c)}
+                        className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left text-sm hover:bg-secondary/60 disabled:opacity-40"
+                      >
+                        <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded bg-secondary/60">
+                          {c.logoUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={c.logoUrl} alt="" className="max-h-6 max-w-[1.9rem] object-contain" />
+                          ) : (
+                            <Building2 className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate font-medium">{c.name}</span>
+                            {c.originCountry && (
+                              <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                                {c.originCountry}
+                              </span>
+                            )}
+                          </span>
+                          {(c.ownedCount !== undefined || c.movieCount !== undefined) && (
+                            <span className="mt-0.5 flex items-center gap-1.5 text-xs">
+                              <span
+                                className={cn(
+                                  "font-medium",
+                                  (c.ownedCount ?? 0) > 0 ? "text-primary" : "text-muted-foreground",
+                                )}
+                              >
+                                {c.ownedCount ?? 0} in your library
+                              </span>
+                              {c.movieCount !== undefined && (
+                                <span className="text-muted-foreground">· {c.movieCount} on TMDb</span>
+                              )}
+                            </span>
+                          )}
+                        </span>
+                        {added ? (
+                          <span className="shrink-0 text-[10px] font-medium uppercase text-muted-foreground">
+                            added
+                          </span>
+                        ) : (
+                          <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                        )}
+                      </button>
+                    );
+                  })
+                )}
+                {companies && companies.length === 0 && !isFetching && (
+                  <p className="px-2 py-2 text-xs text-muted-foreground">No studios matched.</p>
+                )}
               </div>
-            )}
+            ) : null}
           </div>
 
           {studio.studios.length === 0 ? (

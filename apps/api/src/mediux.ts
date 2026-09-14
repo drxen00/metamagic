@@ -196,6 +196,24 @@ export async function indexByIds(client: PlexClient): Promise<Map<string, Indexe
   return index;
 }
 
+let indexCache: { at: number; index: Map<string, IndexedItem> } | null = null;
+const INDEX_TTL = 2 * 60 * 1000;
+
+/**
+ * indexByIds with a short in-memory cache, for interactive lookups (e.g. the
+ * studio picker) that would otherwise rescan the whole library on every
+ * keystroke. Scheduled automations keep calling indexByIds directly so they
+ * always see a fresh library.
+ */
+export async function getLibraryIndexCached(
+  client: PlexClient,
+): Promise<Map<string, IndexedItem>> {
+  if (indexCache && Date.now() - indexCache.at < INDEX_TTL) return indexCache.index;
+  const index = await indexByIds(client);
+  indexCache = { at: Date.now(), index };
+  return index;
+}
+
 function lookup(index: Map<string, IndexedItem>, id: string): IndexedItem | undefined {
   return index.get(`tmdb:${id}`) ?? index.get(`tvdb:${id}`);
 }

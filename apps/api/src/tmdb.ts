@@ -4,6 +4,7 @@ import { cacheMovieCollection, getAppSetting, getCachedMovieCollection } from ".
 const TMDB_API = "https://api.themoviedb.org/3";
 const IMG_PREVIEW = "https://image.tmdb.org/t/p/w342";
 const IMG_FULL = "https://image.tmdb.org/t/p/original";
+const IMG_LOGO = "https://image.tmdb.org/t/p/w92";
 
 export class TmdbError extends Error {
   constructor(
@@ -142,12 +143,52 @@ export async function tmdbTvSeasons(
   }));
 }
 
+export interface CompanySearchResult {
+  id: number;
+  name: string;
+  logoUrl?: string;
+  originCountry?: string;
+}
+
 /** Search TMDb production companies (studios) by name. */
-export async function searchCompanies(query: string): Promise<{ id: number; name: string }[]> {
-  const data = await tmdbFetch<{ results?: { id: number; name: string }[] }>(
-    `/search/company?query=${encodeURIComponent(query)}`,
-  );
-  return (data.results ?? []).slice(0, 15).map((c) => ({ id: c.id, name: c.name }));
+export async function searchCompanies(query: string): Promise<CompanySearchResult[]> {
+  const data = await tmdbFetch<{
+    results?: { id: number; name: string; logo_path?: string | null; origin_country?: string }[];
+  }>(`/search/company?query=${encodeURIComponent(query)}`);
+  return (data.results ?? []).slice(0, 15).map((c) => ({
+    id: c.id,
+    name: c.name,
+    logoUrl: c.logo_path ? `${IMG_LOGO}${c.logo_path}` : undefined,
+    originCountry: c.origin_country || undefined,
+  }));
+}
+
+const companyStatsCache = new Map<number, { at: number; ids: string[]; total: number }>();
+const COMPANY_STATS_TTL = 6 * 60 * 60 * 1000;
+
+/**
+ * A company's movie TMDb ids (capped at 5 pages, like discovery) plus TMDb's
+ * exact total film count. Cached in-memory so the studio picker can enrich many
+ * candidates without hammering TMDb, and so the actual run reuses the ids.
+ */
+export async function companyMovieStats(
+  companyId: number,
+): Promise<{ ids: string[]; total: number }> {
+  const hit = companyStatsCache.get(companyId);
+  if (hit && Date.now() - hit.at < COMPANY_STATS_TTL) return { ids: hit.ids, total: hit.total };
+  const ids: string[] = [];
+  let total = 0;
+  const maxPages = 5;
+  for (let page = 1; page <= maxPages; page++) {
+    const data = await tmdbFetch<TmdbDiscover & { total_results?: number }>(
+      `/discover/movie?with_companies=${companyId}&page=${page}&include_adult=false`,
+    );
+    total = data.total_results ?? total;
+    for (const r of data.results ?? []) ids.push(String(r.id));
+    if (page >= (data.total_pages ?? 1)) break;
+  }
+  companyStatsCache.set(companyId, { at: Date.now(), ids, total });
+  return { ids, total };
 }
 
 /** Every movie from a production company (paged, capped like keyword discovery). */

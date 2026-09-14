@@ -13,6 +13,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.20.0",
+    title: "Know what you’re adding",
+    date: "2026-09-14",
+    added: [
+      "The studio picker now shows each studio’s logo, country, how many of its films you already own, and its total on TMDb — and sorts by what you own most of, so it’s obvious which “A24” is the right one.",
+      "“Collections you could create” now defaults to needing at least 2 owned films, so the scan leads with real franchises instead of one-offs.",
+    ],
+  },
+  {
     version: "0.19.0",
     title: "Fill the gaps",
     date: "2026-09-14",
