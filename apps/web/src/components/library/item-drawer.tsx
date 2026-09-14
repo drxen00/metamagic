@@ -9,6 +9,7 @@ import type {
   EditItemInput,
   MediaItem,
   PlexCollection,
+  ShowCompleteness,
 } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn, formatDuration, imageUrl } from "@/lib/utils";
@@ -18,6 +19,7 @@ import { Input, Label } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AddToCollectionDialog } from "./add-to-collection-dialog";
+import { ArrRequestDialog } from "./arr-request-dialog";
 import { PosterPicker } from "./poster-picker";
 import { ProvenanceNote } from "./provenance-note";
 
@@ -33,6 +35,7 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
   const [editing, setEditing] = React.useState(false);
   const [pickerKind, setPickerKind] = React.useState<ArtworkKind | null>(null);
   const [seasonPicker, setSeasonPicker] = React.useState<MediaItem | null>(null);
+  const [requestOpen, setRequestOpen] = React.useState(false);
   const [title, setTitle] = React.useState("");
   const [summary, setSummary] = React.useState("");
   const [editError, setEditError] = React.useState<string | null>(null);
@@ -62,6 +65,31 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
     queryFn: () => api<MediaItem[]>(`/api/items/${ratingKey}/children`),
     enabled: !!ratingKey && item?.type === "show",
   });
+
+  // Which aired seasons this show is missing vs TMDb, for the Sonarr request UI.
+  const { data: completeness } = useQuery({
+    queryKey: ["show-missing", ratingKey],
+    queryFn: () => api<ShowCompleteness>(`/api/shows/${ratingKey}/missing`),
+    enabled: !!ratingKey && item?.type === "show",
+  });
+
+  const requestShow = useMutation({
+    mutationFn: () =>
+      api("/api/arr/request", {
+        method: "POST",
+        body: JSON.stringify({ kind: "sonarr", id: completeness?.tvdbId, title: item?.title }),
+      }),
+    onSuccess: () => {
+      setRequestOpen(false);
+      qc.invalidateQueries({ queryKey: ["show-missing", ratingKey] });
+    },
+  });
+
+  React.useEffect(() => {
+    setRequestOpen(false);
+    requestShow.reset();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ratingKey]);
 
   const invalidateItem = () => {
     qc.invalidateQueries({ queryKey: ["item", ratingKey] });
@@ -307,6 +335,33 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
               </div>
             )}
 
+            {item.type === "show" && completeness && completeness.missing.length > 0 && (
+              <div className="space-y-2 rounded-lg border border-warning/40 bg-warning/5 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="text-sm font-semibold uppercase tracking-wide text-warning">
+                    Missing {completeness.missing.length === 1 ? "season" : "seasons"}
+                  </h3>
+                  {completeness.sonarrConfigured && completeness.tvdbId && (
+                    <Button size="sm" variant="outline" onClick={() => setRequestOpen(true)}>
+                      Request in Sonarr
+                    </Button>
+                  )}
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {completeness.missing.map((s) => (
+                    <Badge key={s.season} variant="outline" title={s.airDate}>
+                      {s.name ?? `Season ${s.season}`}
+                    </Badge>
+                  ))}
+                </div>
+                {!completeness.sonarrConfigured && (
+                  <p className="text-xs text-muted-foreground">
+                    Configure Sonarr in Settings to request missing seasons.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2 pt-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -374,6 +429,15 @@ export function ItemDrawer({ ratingKey, sectionId, onClose }: ItemDrawerProps) {
                   itemType="season"
                 />
               )}
+              <ArrRequestDialog
+                open={requestOpen}
+                title={item.title}
+                target="Sonarr"
+                loading={requestShow.isPending}
+                error={requestShow.error ? (requestShow.error as Error).message : null}
+                onClose={() => setRequestOpen(false)}
+                onConfirm={() => requestShow.mutate()}
+              />
             </>
           )}
         </div>

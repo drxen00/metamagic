@@ -127,6 +127,21 @@ export async function searchKeywords(query: string): Promise<{ id: number; name:
   return (data.results ?? []).slice(0, 15);
 }
 
+/** A TV show's seasons from TMDb, for missing-season detection. */
+export async function tmdbTvSeasons(
+  tmdbId: string,
+): Promise<{ season: number; name?: string; airDate?: string; episodes: number }[]> {
+  const data = await tmdbFetch<{
+    seasons?: { season_number: number; name?: string; air_date?: string; episode_count?: number }[];
+  }>(`/tv/${tmdbId}`);
+  return (data.seasons ?? []).map((s) => ({
+    season: s.season_number,
+    name: s.name,
+    airDate: s.air_date || undefined,
+    episodes: s.episode_count ?? 0,
+  }));
+}
+
 /** Search TMDb production companies (studios) by name. */
 export async function searchCompanies(query: string): Promise<{ id: number; name: string }[]> {
   const data = await tmdbFetch<{ results?: { id: number; name: string }[] }>(

@@ -5,7 +5,10 @@ import {
   arrRequestSchema,
   arrTestSchema,
   type ArrSettings,
+  type ShowCompleteness,
 } from "@metamagic/shared";
+import { requirePlex } from "./client-store.js";
+import { tmdbConfigured, tmdbTvSeasons } from "./tmdb.js";
 import {
   ArrError,
   arrQualityProfiles,
@@ -105,6 +108,29 @@ export function registerArrRoutes(app: FastifyInstance): void {
       return reply.status(status).send({ error: err instanceof Error ? err.message : "Request failed." });
     }
   });
+
+  // Seasons a show is missing vs TMDb — for the Sonarr request UI in the drawer.
+  app.get<{ Params: { ratingKey: string } }>(
+    "/api/shows/:ratingKey/missing",
+    async (req): Promise<ShowCompleteness> => {
+      const sonarrConfigured = !!getArrConfig("sonarr");
+      const client = requirePlex();
+      const item = await client.item(req.params.ratingKey);
+      const empty: ShowCompleteness = { tvdbId: item.tvdbId, sonarrConfigured, missing: [] };
+      if (item.type !== "show" || !item.tmdbId || !tmdbConfigured()) return empty;
+
+      const [seasons, tmdbSeasons] = await Promise.all([
+        client.children(req.params.ratingKey).catch(() => []),
+        tmdbTvSeasons(item.tmdbId).catch(() => []),
+      ]);
+      const owned = new Set(seasons.map((s) => s.index).filter((i) => i !== undefined));
+      const today = new Date().toISOString().slice(0, 10);
+      const missing = tmdbSeasons
+        .filter((s) => s.season >= 1 && !owned.has(s.season) && s.airDate && s.airDate <= today)
+        .map((s) => ({ season: s.season, name: s.name, airDate: s.airDate }));
+      return { tvdbId: item.tvdbId, sonarrConfigured, missing };
+    },
+  );
 
   // Which requested movies are currently downloading (TMDb ids), for a status badge.
   app.get("/api/arr/queue", async (): Promise<{ tmdbIds: string[] }> => {

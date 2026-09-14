@@ -13,6 +13,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.19.0",
+    title: "Fill the gaps",
+    date: "2026-09-14",
+    added: [
+      "Open any show to see which aired seasons you’re missing (vs TMDb) and request the whole series in Sonarr in one click.",
+      "New opt-in automation: automatically request missing collection movies from Radarr as new parts get added — off by default, with a mandatory heads-up before it can be enabled.",
+    ],
+  },
+  {
     version: "0.18.0",
     title: "Instant automations",
     date: "2026-09-14",
