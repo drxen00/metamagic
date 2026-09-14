@@ -585,6 +585,20 @@ export interface KeywordOption {
   name: string;
 }
 
+/** A TMDb production company candidate for the studio-automation picker. */
+export interface CompanyOption {
+  id: number;
+  name: string;
+  /** Small logo, for telling apart same-named companies. */
+  logoUrl?: string;
+  /** ISO country code (e.g. "US"), when TMDb knows it. */
+  originCountry?: string;
+  /** Films from this company you already own (capped at the discovery window). */
+  ownedCount?: number;
+  /** Total films TMDb lists for this company. */
+  movieCount?: number;
+}
+
 // ---------- MediUX auto-sync ----------
 
 /**

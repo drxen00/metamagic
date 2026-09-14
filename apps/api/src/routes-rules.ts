@@ -11,6 +11,7 @@ import {
   type ActivityEvent,
   type AutomationPresets,
   type AutomationSettings,
+  type CompanyOption,
   type DiscordEvents,
   type DiscordSettings,
   type DiscoveredCollection,
@@ -22,7 +23,8 @@ import {
   type RuleEvaluation,
   type RuleRun,
 } from "@metamagic/shared";
-import { requirePlex } from "./client-store.js";
+import { plexClient, requirePlex } from "./client-store.js";
+import { getLibraryIndexCached } from "./mediux.js";
 import { PlexError } from "./plex.js";
 import {
   createRule,
@@ -63,7 +65,7 @@ import {
   setStudioAutomation,
 } from "./automations.js";
 import { discoverCollections } from "./discover.js";
-import { searchCompanies, searchKeywords } from "./tmdb.js";
+import { companyMovieStats, searchCompanies, searchKeywords } from "./tmdb.js";
 import { startJob, getJob } from "./jobs.js";
 import { getDiscordEvents, sendTestNotification } from "./notify.js";
 import { automationsPaused } from "./scheduler.js";
@@ -424,11 +426,48 @@ export function registerRuleRoutes(app: FastifyInstance): void {
   });
 
   // Studio (production company) search for the studio-automation picker.
-  app.get<{ Querystring: { q?: string } }>("/api/tmdb/companies", async (req) => {
-    const q = req.query.q?.trim();
-    if (!q) return [];
-    return searchCompanies(q);
-  });
+  // Enriches candidates with a logo, origin country, how many of their films you
+  // already own, and TMDb's total — so it's obvious which "A24" is the real one.
+  app.get<{ Querystring: { q?: string } }>(
+    "/api/tmdb/companies",
+    async (req): Promise<CompanyOption[]> => {
+      const q = req.query.q?.trim();
+      if (!q) return [];
+      const companies = await searchCompanies(q);
+      const client = plexClient();
+      if (!client) return companies;
+
+      let index: Map<string, { type: string }>;
+      try {
+        index = await getLibraryIndexCached(client);
+      } catch {
+        return companies; // Plex hiccup — still return the basics.
+      }
+
+      // Enrich the most-relevant candidates in parallel; leave the rest as-is.
+      const enriched = await Promise.all(
+        companies.slice(0, 8).map(async (c): Promise<CompanyOption> => {
+          try {
+            const { ids, total } = await companyMovieStats(c.id);
+            const ownedCount = ids.reduce(
+              (n, id) => n + (index.get(`tmdb:${id}`)?.type === "movie" ? 1 : 0),
+              0,
+            );
+            return { ...c, ownedCount, movieCount: total };
+          } catch {
+            return c;
+          }
+        }),
+      );
+
+      // Surface what you own most of first, then the biggest catalogs.
+      enriched.sort(
+        (a, b) =>
+          (b.ownedCount ?? 0) - (a.ownedCount ?? 0) || (b.movieCount ?? 0) - (a.movieCount ?? 0),
+      );
+      return enriched;
+    },
+  );
 
   // Run a preset automation right now (bypasses the daily gate + enabled toggle).
   app.post("/api/automations/franchise/run", async () => {

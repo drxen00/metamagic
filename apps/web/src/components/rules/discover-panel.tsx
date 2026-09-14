@@ -53,7 +53,7 @@ export function DiscoverPanel() {
     create.isSuccess && create.variables ? [create.variables.tmdbCollectionId] : [],
   );
 
-  const [minOwned, setMinOwned] = React.useState(1);
+  const [minOwned, setMinOwned] = React.useState(2);
   const [hideExisting, setHideExisting] = React.useState(false);
   const [collapsed, setCollapsed] = React.useState(false);
   const visible = suggestions.filter(
