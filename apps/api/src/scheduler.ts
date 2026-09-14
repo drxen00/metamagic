@@ -5,8 +5,11 @@ import { plexClient } from "./client-store.js";
 import { runRule } from "./rules.js";
 import { runMediuxAutoSync } from "./mediux-sync.js";
 import { runPresetAutomations } from "./automations.js";
+import { runWatcherTick } from "./watcher.js";
 
 const TICK_MS = 15 * 60 * 1000;
+/** Fast change-watcher tick — reacts to new content within ~a minute. */
+const WATCH_TICK_MS = 60 * 1000;
 
 const INTERVALS: Record<string, number> = {
   hourly: 60 * 60 * 1000,
@@ -78,11 +81,33 @@ export function startScheduler(log: FastifyBaseLogger): void {
     }
   };
 
+  // Fast change-watcher: reacts to new content within ~a minute so automations
+  // feel instant, instead of waiting for the 15-min/daily tick.
+  let watching = false;
+  const watchTick = async () => {
+    if (automationsPaused() || watching) return;
+    const client = plexClient();
+    if (!client) return;
+    watching = true;
+    try {
+      await runWatcherTick(client, log);
+    } catch (err) {
+      log.error({ err }, "watcher tick threw");
+    } finally {
+      watching = false;
+    }
+  };
+
   // A short delay so the first tick doesn't race container startup.
   setTimeout(() => {
     void runTick();
     setInterval(() => void runTick(), TICK_MS);
   }, 30_000).unref?.();
 
-  log.info("automation scheduler started (15 min tick)");
+  setTimeout(() => {
+    void watchTick();
+    setInterval(() => void watchTick(), WATCH_TICK_MS);
+  }, 20_000).unref?.();
+
+  log.info("automation scheduler started (15 min tick + 60s change-watcher)");
 }
