@@ -2,12 +2,13 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Clapperboard, Tv, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Clapperboard, Tv, XCircle } from "lucide-react";
 import type { ArrOptions, ArrSettings } from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Dialog } from "@/components/ui/dialog";
 import { Input, Label, NativeSelect } from "@/components/ui/input";
 
 type Kind = "radarr" | "sonarr";
@@ -182,11 +183,102 @@ function ArrKindCard({ kind, label, icon: Icon }: { kind: Kind; label: string; i
   );
 }
 
+function AutoRequestCard() {
+  const qc = useQueryClient();
+  const [ackOpen, setAckOpen] = React.useState(false);
+  const [ack, setAck] = React.useState(false);
+
+  const { data } = useQuery({
+    queryKey: ["arr-settings"],
+    queryFn: () => api<ArrSettings>("/api/settings/arr"),
+  });
+  const auto = data?.autoRequest ?? { enabled: false, acknowledged: false };
+  const radarrReady =
+    !!data?.radarr.configured && !!data?.radarr.rootFolder && !!data?.radarr.qualityProfileId;
+
+  const save = useMutation({
+    mutationFn: (body: { enabled: boolean; acknowledged?: boolean }) =>
+      api("/api/settings/arr/auto-request", { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["arr-settings"] });
+      setAckOpen(false);
+      setAck(false);
+    },
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle>Auto-request missing movies</CardTitle>
+            <CardDescription className="mt-1 max-w-2xl">
+              When on, MetaMagic asks Radarr to add &amp; search for released movies missing from your
+              collections (each requested once, a few dozen per day). Explicit per-movie requests
+              always work regardless.
+            </CardDescription>
+          </div>
+          <Button
+            variant={auto.enabled ? "default" : "outline"}
+            loading={save.isPending && save.variables?.enabled === false}
+            disabled={!radarrReady}
+            onClick={() => (auto.enabled ? save.mutate({ enabled: false }) : setAckOpen(true))}
+          >
+            {auto.enabled ? "On" : "Off"}
+          </Button>
+        </div>
+      </CardHeader>
+      {!radarrReady && (
+        <CardContent>
+          <p className="text-xs text-warning">
+            Connect Radarr and pick a root folder + quality profile above first.
+          </p>
+        </CardContent>
+      )}
+
+      <Dialog open={ackOpen} onClose={() => setAckOpen(false)} title="Turn on auto-requests?">
+        <div className="space-y-4">
+          <div className="flex gap-2.5 rounded-md border border-warning/40 bg-warning/10 p-3 text-sm">
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
+            <p className="text-foreground/90">
+              MetaMagic will automatically add and search for every released movie missing from your
+              collections. Depending on your Radarr settings this can be a <strong>lot</strong> of
+              downloads. It&apos;s capped and deduped, but make sure that&apos;s what you want.
+            </p>
+          </div>
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input
+              type="checkbox"
+              checked={ack}
+              onChange={(e) => setAck(e.target.checked)}
+              className="mt-0.5 h-4 w-4 accent-[hsl(var(--primary))]"
+            />
+            <span>I understand this will automatically request downloads in Radarr.</span>
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setAckOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              disabled={!ack}
+              loading={save.isPending}
+              onClick={() => save.mutate({ enabled: true, acknowledged: true })}
+            >
+              Turn on
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    </Card>
+  );
+}
+
 export function ArrSettingsCards() {
   return (
     <>
       <ArrKindCard kind="radarr" label="Radarr" icon={Clapperboard} />
       <ArrKindCard kind="sonarr" label="Sonarr" icon={Tv} />
+      <AutoRequestCard />
     </>
   );
 }

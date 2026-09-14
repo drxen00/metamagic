@@ -534,7 +534,15 @@ export interface ArrIntegration {
 export interface ArrSettings {
   radarr: ArrIntegration;
   sonarr: ArrIntegration;
+  /** Auto-request missing collection movies from Radarr (behind an ack). */
+  autoRequest: { enabled: boolean; acknowledged: boolean };
 }
+
+export const arrAutoRequestSchema = z.object({
+  enabled: z.boolean(),
+  acknowledged: z.boolean().optional(),
+});
+export type ArrAutoRequestInput = z.infer<typeof arrAutoRequestSchema>;
 
 export interface ArrOptions {
   rootFolders: { path: string; freeSpace?: number }[];
