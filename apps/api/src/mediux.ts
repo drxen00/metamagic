@@ -7,8 +7,10 @@ import { recordArtworkSource } from "./db.js";
 import { resolveTitleById } from "./tmdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
 
-/** MediUX "Copy YAML" embeds the set link in a comment — pull it out for provenance. */
+/** MediUX "Copy YAML" embeds the set/boxset link in a comment — pull it out for provenance. */
 export function extractSetUrl(yamlText: string): { url?: string; label: string } {
+  const box = yamlText.match(/https?:\/\/(?:www\.)?mediux\.pro\/boxsets\/(\d+)/i);
+  if (box) return { url: `https://mediux.pro/boxsets/${box[1]}`, label: `MediUX boxset ${box[1]}` };
   const m = yamlText.match(/https?:\/\/(?:www\.)?mediux\.pro\/sets\/(\d+)/i);
   if (m) return { url: `https://mediux.pro/sets/${m[1]}`, label: `MediUX set ${m[1]}` };
   return { label: "MediUX YAML" };

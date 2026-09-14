@@ -111,6 +111,24 @@ export async function rememberMediuxSet(
   upsertMediuxWatch({ ratingKey, type, title, thumb, tmdbId, yaml, setUrl, signature });
 }
 
+/**
+ * After a boxset YAML is applied, remember every collection it re-postered so
+ * the whole boxset stays in auto-sync. Returns how many collections it tracked.
+ */
+export async function rememberBoxset(
+  client: PlexClient,
+  results: MediuxMatch[],
+  yaml: string,
+): Promise<number> {
+  let tracked = 0;
+  for (const r of results) {
+    if (r.kind !== "collection" || !r.applied || !r.ratingKey) continue;
+    await rememberMediuxSet(client, r.ratingKey, "collection", yaml).catch(() => {});
+    tracked++;
+  }
+  return tracked;
+}
+
 /** Build the transient collection-sync rule a watch stands in for. */
 function watchRule(watch: MediuxWatchFull, sectionId: string): Rule {
   return {

@@ -14,12 +14,15 @@ export function MediuxImportPanel({
   rows = 6,
   onDone,
   scope,
+  boxset,
 }: {
   rows?: number;
   /** When set, a "Done" button appears once an apply finishes (e.g. to close the poster picker). */
   onDone?: () => void;
   /** The collection/show this picker is scoped to — lets MetaMagic remember the set for auto-sync. */
   scope?: { ratingKey: string; type: "collection" | "show" | "season" | "movie" };
+  /** Boxset mode: apply across all matching collections and track each for auto-sync. */
+  boxset?: boolean;
 }) {
   const qc = useQueryClient();
   const [yamlText, setYamlText] = React.useState("");
@@ -48,7 +51,11 @@ export function MediuxImportPanel({
         method: "POST",
         body: JSON.stringify({
           yaml: yamlText,
-          ...(scope ? { scopeRatingKey: scope.ratingKey, scopeType: scope.type } : {}),
+          ...(boxset
+            ? { scopeType: "boxset" }
+            : scope
+              ? { scopeRatingKey: scope.ratingKey, scopeType: scope.type }
+              : {}),
         }),
       }),
     onSuccess: (data) => {
