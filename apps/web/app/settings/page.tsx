@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Server, Unplug, XCircle } from "lucide-react";
+import { CheckCircle2, Coffee, Server, Unplug, XCircle } from "lucide-react";
 import type {
   AutomationSettings,
   ConnectionStatus,
@@ -189,8 +189,32 @@ export default function SettingsPage() {
         <AutomationsCard />
         <MediuxImportCard />
         <AccountCard />
+        <SupportCard />
       </div>
     </main>
+  );
+}
+
+function SupportCard() {
+  return (
+    <Card className="border-warning/30 bg-warning/5">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Coffee className="h-4 w-4 text-warning" /> Support MetaMagic
+        </CardTitle>
+        <CardDescription>
+          MetaMagic is built and maintained by one person, and it&apos;s free. If it&apos;s made
+          your Plex library nicer to live with, you can chip in to keep it going.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <a href="https://buymeacoffee.com/drxen00" target="_blank" rel="noreferrer">
+          <Button variant="outline">
+            <Coffee className="h-4 w-4" /> Buy me a coffee
+          </Button>
+        </a>
+      </CardContent>
+    </Card>
   );
 }
 
