@@ -61,6 +61,9 @@ MetaMagic gives you Kometa-grade automation — collections, artwork, overlays �
 <p align="center"><em>Activity — a timeline of everything MetaMagic has done</em><br/>
 <img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/activity.webp" alt="MetaMagic activity" width="900" /></p>
 
+<p align="center"><em>Discord — granular, per-category notifications</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/discord.webp" alt="MetaMagic Discord notifications" width="900" /></p>
+
 ## Install
 
 MetaMagic ships as a single Docker image: `ghcr.io/drxen00/metamagic:latest`. It serves the web UI on port **3800** and stores everything (its SQLite database and your encrypted Plex credentials) in **`/config`**.
