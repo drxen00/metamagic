@@ -41,6 +41,29 @@ MetaMagic gives you Kometa-grade automation — collections, artwork, overlays �
 - **Instant reactions** — a change-watcher notices new content within about a minute, so automations feel immediate.
 - **Safe by design** — your Plex token is encrypted at rest (AES-256-GCM) and never sent to the browser; posters are proxied through the backend.
 
+## Screenshots
+
+<p align="center"><em>Dashboard</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/dashboard.webp" alt="MetaMagic dashboard" width="900" /></p>
+
+<p align="center"><em>Library — poster grid with search, sort, and filters</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/library.webp" alt="MetaMagic library" width="900" /></p>
+
+<p align="center"><em>Collections — with the “Collections you could create” scanner</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/collections.webp" alt="MetaMagic collections" width="900" /></p>
+
+<p align="center"><em>Automations — MediUX Auto-Sync, franchise/studio collections, and more</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/automations.webp" alt="MetaMagic automations" width="900" /></p>
+
+<p align="center"><em>Overlays — design badges with a live, drag-to-place preview</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/overlays.webp" alt="MetaMagic overlays" width="900" /></p>
+
+<p align="center"><em>Activity — a timeline of everything MetaMagic has done</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/activity.webp" alt="MetaMagic activity" width="900" /></p>
+
+<p align="center"><em>Discord — granular, per-category notifications</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/discord.webp" alt="MetaMagic Discord notifications" width="900" /></p>
+
 ## Install
 
 MetaMagic ships as a single Docker image: `ghcr.io/drxen00/metamagic:latest`. It serves the web UI on port **3800** and stores everything (its SQLite database and your encrypted Plex credentials) in **`/config`**.
