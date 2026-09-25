@@ -46,6 +46,9 @@ MetaMagic gives you Kometa-grade automation — collections, artwork, overlays �
 <p align="center"><em>Dashboard</em><br/>
 <img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/dashboard.webp" alt="MetaMagic dashboard" width="900" /></p>
 
+<p align="center"><em>Library — poster grid with search, sort, and filters</em><br/>
+<img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/library.webp" alt="MetaMagic library" width="900" /></p>
+
 <p align="center"><em>Collections — with the “Collections you could create” scanner</em><br/>
 <img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/collections.webp" alt="MetaMagic collections" width="900" /></p>
 
