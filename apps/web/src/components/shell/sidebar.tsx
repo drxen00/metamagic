@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Activity,
+  Coffee,
   Layers,
   LayoutDashboard,
   Library,
@@ -142,6 +143,16 @@ export function Sidebar() {
           )}
         </Link>
         <div className={cn("flex items-center", collapsed ? "flex-col gap-1" : "gap-1")}>
+          <a
+            href="https://buymeacoffee.com/drxen00"
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Buy me a coffee"
+            title="Support MetaMagic — buy me a coffee"
+            className="shrink-0 rounded-md p-1.5 text-sidebar-foreground/50 transition-colors hover:bg-warning/15 hover:text-warning"
+          >
+            <Coffee className="h-4 w-4" />
+          </a>
           <button
             onClick={() => logout.mutate()}
             aria-label="Sign out"

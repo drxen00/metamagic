@@ -13,6 +13,17 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.21.0",
+    title: "Polish + a coffee",
+    date: "2026-09-25",
+    added: [
+      "You can now support MetaMagic with a “Buy me a coffee” link — in the sidebar and on the Settings page. It’s always optional and always appreciated.",
+    ],
+    fixed: [
+      "Fixed the app icon so it fills the frame properly in the Unraid docker tab and app store, instead of looking inset.",
+    ],
+  },
+  {
     version: "0.20.0",
     title: "Know what you’re adding",
     date: "2026-09-14",

@@ -30,6 +30,10 @@ docker run -d --name metamagic -p 3800:3800 -v /path/to/appdata:/config -e PUID=
 
 An Unraid Community Applications template lives at [docker/unraid-template.xml](docker/unraid-template.xml).
 
+## Support
+
+MetaMagic is free and built by one person. If it's made your Plex library nicer to live with, you can [buy me a coffee ☕](https://buymeacoffee.com/drxen00) — it's always appreciated and helps keep development going.
+
 ## Credits
 
 The visual design system (color tokens and theme presets) is ported from [arr-dashboard](https://github.com/Kha-kis/arr-dashboard) by the arr-dashboard contributors, used under the MIT License.
