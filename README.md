@@ -41,6 +41,12 @@ MetaMagic gives you Kometa-grade automation — collections, artwork, overlays �
 - **Instant reactions** — a change-watcher notices new content within about a minute, so automations feel immediate.
 - **Safe by design** — your Plex token is encrypted at rest (AES-256-GCM) and never sent to the browser; posters are proxied through the backend.
 
+## Screenshots
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/screenshots/dashboard.webp" alt="MetaMagic dashboard" width="900" />
+</p>
+
 ## Install
 
 MetaMagic ships as a single Docker image: `ghcr.io/drxen00/metamagic:latest`. It serves the web UI on port **3800** and stores everything (its SQLite database and your encrypted Plex credentials) in **`/config`**.
