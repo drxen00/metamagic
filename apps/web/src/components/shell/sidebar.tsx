@@ -149,7 +149,7 @@ export function Sidebar() {
             rel="noreferrer"
             aria-label="Buy me a coffee"
             title="Support MetaMagic — buy me a coffee"
-            className="shrink-0 rounded-md p-1.5 text-sidebar-foreground/50 transition-colors hover:bg-warning/15 hover:text-warning"
+            className="shrink-0 rounded-md p-1.5 text-sidebar-primary/80 transition-colors hover:bg-sidebar-primary/15 hover:text-sidebar-primary"
           >
             <Coffee className="h-4 w-4" />
           </a>

@@ -91,6 +91,49 @@ export async function notifyActivityEvent(event: ActivityEvent): Promise<void> {
   }
 }
 
+/** One item that changed during a MediUX auto-sync sweep. */
+export interface MediuxSweepChange {
+  title: string;
+  detail: string;
+  status: "ok" | "error";
+}
+
+/**
+ * One batched Discord message for a whole auto-sync sweep, instead of a ping per
+ * tracked item. Keeps the "mediuxSync" category gate.
+ */
+export async function notifyMediuxSweep(
+  changes: MediuxSweepChange[],
+  trigger: string,
+): Promise<void> {
+  if (changes.length === 0) return;
+  const webhookUrl = getAppSetting(DISCORD_KEY);
+  if (!webhookUrl) return;
+  if (!getDiscordEvents().mediuxSync) return;
+
+  const failed = changes.filter((c) => c.status === "error").length;
+  const ok = changes.length - failed;
+  const lines = changes
+    .slice(0, 25)
+    .map((c) => `${c.status === "error" ? "❌" : "•"} **${c.title}** — ${c.detail}`);
+  if (changes.length > 25) lines.push(`…and ${changes.length - 25} more`);
+
+  const title = failed
+    ? `⚠️ MediUX auto-sync · ${ok} updated, ${failed} failed`
+    : `✅ MediUX auto-sync · ${ok} updated`;
+
+  try {
+    await post(webhookUrl, {
+      title,
+      description: [`_${trigger}_`, ...lines].join("\n"),
+      color: failed ? 0xf59e0b : 0x5b36e0,
+      timestamp: new Date().toISOString(),
+    });
+  } catch {
+    // Never let a notification failure break the sweep it describes.
+  }
+}
+
 /** Fired after a rule run that did something worth reporting. */
 export async function notifyRuleRun(run: RuleRun, rule: Rule): Promise<void> {
   const webhookUrl = getAppSetting(DISCORD_KEY);

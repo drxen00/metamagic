@@ -13,6 +13,7 @@ import { applyMediux, extractSetUrl, type ProgressReporter } from "./mediux.js";
 import { evaluateRule } from "./rules.js";
 import { resolveTmdbCollection } from "./collection-match.js";
 import { recordActivity } from "./activity.js";
+import { notifyMediuxSweep, type MediuxSweepChange } from "./notify.js";
 import type { MediuxMatch, MediuxSyncMode, RuleChange } from "@metamagic/shared";
 
 const SCHEDULE_INTERVALS: Record<Exclude<MediuxSyncMode, "detect">, number> = {
@@ -133,23 +134,37 @@ function watchRule(watch: MediuxWatchFull, sectionId: string): Rule {
   };
 }
 
+export interface SyncOutcome {
+  /**
+   * Whether something actually happened worth reporting. In detect mode a
+   * collection that gained no new members is `false`, so unrelated library
+   * growth no longer spams the timeline/Discord for every tracked item.
+   */
+  changed: boolean;
+  added: number;
+  /** Human-readable summary for the timeline / job feed. */
+  result: string;
+}
+
 /**
  * Sync one watch: for collections, add any newly-owned franchise films and
  * re-apply the set to them (via the rules engine); for shows, re-apply the set
  * so new seasons/episode cards get their art. `force` re-applies even when a
- * collection gained no new members (used by "Run now").
+ * collection gained no new members (used by "Run now" / scheduled cadence).
  */
 export async function syncWatch(
   client: PlexClient,
   watch: MediuxWatchFull,
   opts: { force: boolean; report?: ProgressReporter<MediuxMatch> },
-): Promise<string> {
+): Promise<SyncOutcome> {
   const log = (line: string) => opts.report?.log(line);
 
   if (watch.type === "show") {
+    // A show only reaches here on a real season change (detect) or on force, so
+    // re-applying its art is always meaningful.
     opts.report?.setCurrent(`Re-applying “${watch.title}” artwork…`);
     await applyMediux(client, watch.yaml, opts.report);
-    return "artwork re-applied";
+    return { changed: true, added: 0, result: "artwork re-applied" };
   }
 
   // Collection: keep membership complete, then the engine re-applies the set to
@@ -180,26 +195,41 @@ export async function syncWatch(
         }),
     };
     const evaluation = await evaluateRule(client, rule, { dryRun: false, report: ruleReport });
-    if (opts.force && evaluation.toAdd.length === 0) {
+    const added = evaluation.toAdd.length;
+    if (added > 0) return { changed: true, added, result: `added ${added}, artwork re-applied` };
+    if (opts.force) {
       log("• re-applying the MediUX set to existing members");
       await applyMediux(client, watch.yaml, opts.report);
+      return { changed: true, added: 0, result: "artwork re-applied" };
     }
-    return `added ${evaluation.toAdd.length}, artwork re-applied`;
+    // Detect mode, nothing new joined the collection — no work, nothing to say.
+    return { changed: false, added: 0, result: "no change" };
   }
 
-  await applyMediux(client, watch.yaml, opts.report);
-  return "artwork re-applied";
+  // No TMDb link: we can't tell what (if anything) is new, so only re-apply on
+  // an explicit force (manual/scheduled) — never spam on unrelated library growth.
+  if (opts.force) {
+    await applyMediux(client, watch.yaml, opts.report);
+    return { changed: true, added: 0, result: "artwork re-applied" };
+  }
+  return { changed: false, added: 0, result: "no change" };
 }
 
 /**
  * Scheduler entry point. In `detect` mode a watch is synced when its
  * fingerprint changed; in a scheduled mode it's re-applied on that cadence.
+ * Items that turn out not to have changed advance their signature silently — no
+ * timeline entry, no Discord ping. Everything that did change is logged to the
+ * timeline individually and reported to Discord as a single batched message.
  */
 export async function runMediuxAutoSync(client: PlexClient, log: FastifyBaseLogger): Promise<void> {
   if (!mediuxAutoSyncEnabled()) return;
   const mode = mediuxSyncMode();
   const now = Date.now();
   setAppSetting("mediux_last_check", String(now));
+
+  const triggerLabel = mode === "detect" ? "detected a change" : `${mode} schedule`;
+  const changes: MediuxSweepChange[] = [];
 
   for (const watch of listMediuxWatches()) {
     if (!watch.enabled) continue;
@@ -218,29 +248,44 @@ export async function runMediuxAutoSync(client: PlexClient, log: FastifyBaseLogg
         : !watch.lastSyncedAt || now - watch.lastSyncedAt >= SCHEDULE_INTERVALS[mode];
     if (!due) continue;
 
-    log.info({ ratingKey: watch.ratingKey, title: watch.title, mode }, "mediux auto-sync");
     try {
-      const result = await syncWatch(client, watch, { force: mode !== "detect" });
+      const outcome = await syncWatch(client, watch, { force: mode !== "detect" });
       const after = await computeSignature(client, watch).catch(() => current);
-      recordMediuxWatchSync(watch.ratingKey, after, result);
-      recordActivity({
-        kind: "mediux-sync",
-        title: watch.title,
-        detail: result,
-        status: "ok",
-        trigger: mode === "detect" ? "detected a change" : `${mode} schedule`,
-      });
+      recordMediuxWatchSync(watch.ratingKey, after, outcome.changed ? outcome.result : "no change");
+      // Only surface items that actually changed — a collection that just saw an
+      // unrelated library addition (its section total ticked up, but no new
+      // franchise film joined it) advances its signature quietly.
+      if (outcome.changed) {
+        log.info({ ratingKey: watch.ratingKey, title: watch.title, mode }, "mediux auto-sync");
+        recordActivity(
+          {
+            kind: "mediux-sync",
+            title: watch.title,
+            detail: outcome.result,
+            status: "ok",
+            trigger: triggerLabel,
+          },
+          { notify: false },
+        );
+        changes.push({ title: watch.title, detail: outcome.result, status: "ok" });
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : "sync failed";
       recordMediuxWatchSync(watch.ratingKey, watch.lastSignature, `Error: ${message}`);
-      recordActivity({
-        kind: "mediux-sync",
-        title: watch.title,
-        detail: message,
-        status: "error",
-        trigger: mode === "detect" ? "detected a change" : `${mode} schedule`,
-      });
+      recordActivity(
+        {
+          kind: "mediux-sync",
+          title: watch.title,
+          detail: message,
+          status: "error",
+          trigger: triggerLabel,
+        },
+        { notify: false },
+      );
+      changes.push({ title: watch.title, detail: message, status: "error" });
       log.error({ err, ratingKey: watch.ratingKey }, "mediux auto-sync failed");
     }
   }
+
+  await notifyMediuxSweep(changes, triggerLabel);
 }
