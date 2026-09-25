@@ -1,8 +1,6 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/logo.png" alt="MetaMagic" width="120" height="120" />
+  <img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/header.webp" alt="MetaMagic" width="760" />
 </p>
-
-<h1 align="center">MetaMagic ✨</h1>
 
 <p align="center">
   A Plex library manager with a first-class GUI — the power of Kometa-style library management with <strong>granular per-item control</strong> and <strong>mass operations</strong>, no YAML required.
