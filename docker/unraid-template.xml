@@ -9,7 +9,7 @@
   <Support>https://github.com/drxen00/metamagic/issues</Support>
   <Project>https://github.com/drxen00/metamagic</Project>
   <Overview>MetaMagic is a Plex library manager with a first-class GUI — Kometa-style power with granular per-item control and mass operations, no YAML required. Browse huge libraries with poster grids, edit metadata and artwork (TMDb, MediUX, ThePosterDB), and build automatic collections by franchise or studio. Keep collections and shows styled with MediUX auto-sync, burn in poster overlays with a live drag-to-place preview, get Discord notifications, and request missing movies from Radarr/Sonarr. Your Plex token is encrypted at rest and never sent to the browser.&#13;&#13;Support development: https://buymeacoffee.com/drxen00</Overview>
-  <Category>MediaApp:Other Tools:</Category>
+  <Category>MediaServer:Video Tools:Utilities</Category>
   <WebUI>http://[IP]:[PORT:3800]</WebUI>
   <TemplateURL/>
   <Icon>https://raw.githubusercontent.com/drxen00/metamagic/main/docker/icon.png</Icon>

@@ -4,8 +4,9 @@ A Plex library manager with a first-class GUI — the power of [Kometa](https://
 
 - **Library browser** — poster grids for huge libraries with search, sort, genre/unwatched filters, and infinite scroll
 - **Collections** — create, browse, and delete collections; add/remove single items from the detail drawer, or multi-select posters and bulk-add
+- **Automations** — auto-create franchise & studio collections, MediUX artwork auto-sync, and Radarr/Sonarr requests for missing films & seasons
 - **Safe by design** — your Plex token is encrypted at rest (AES-256-GCM) and never sent to the browser; posters are proxied through the backend
-- **Roadmap** — metadata editing with TMDb art picking, a visual rules engine with live match preview, poster overlays, Kometa config import
+- **Roadmap** — planned features and parity notes live in [ROADMAP.md](ROADMAP.md)
 
 ## Stack
 
