@@ -13,6 +13,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.24.0",
+    title: "Security updates",
+    date: "2026-09-25",
+    fixed: [
+      "Updated dependencies to clear all known security advisories (Next.js, Fastify, sharp, and transitive packages).",
+      "Hardened the internal image proxy against protocol-relative paths.",
+    ],
+  },
+  {
     version: "0.23.0",
     title: "Overlay preview that always shows",
     date: "2026-09-25",

@@ -1,6 +1,14 @@
 packages:
   - "apps/*"
   - "packages/*"
+overrides:
+  next: ">=15.5.24"
+  fastify: ">=5.12.1"
+  postcss: ">=8.5.23"
+  sharp: ">=0.35.0"
+  fast-uri: ">=4.1.1"
+  find-my-way: ">=9.6.1"
+  nanoid: ">=3.3.18"
 allowBuilds:
   better-sqlite3: true
   esbuild: true

@@ -251,7 +251,9 @@ app.get<{ Querystring: { path?: string; w?: string; h?: string } }>(
   "/api/image",
   async (req, reply) => {
     const { path: imagePath, w, h } = req.query;
-    if (!imagePath || !imagePath.startsWith("/")) {
+    // Must be a Plex-relative path. Reject protocol-relative ("//host") and any
+    // absolute URL so the proxy can't be pointed at another host.
+    if (!imagePath || !imagePath.startsWith("/") || imagePath.startsWith("//")) {
       return reply.status(400).send({ error: "Missing or invalid image path" });
     }
     const client = requirePlex();
