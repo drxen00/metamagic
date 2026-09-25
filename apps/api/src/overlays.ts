@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import sharp from "sharp";
+import type { OverlayOptions } from "sharp";
 import type { Badge, BadgeBox, BadgePosition, MediaItem, OverlayPreset } from "@metamagic/shared";
 import { CONFIG_DIR } from "./env.js";
 import { PlexError, EDIT_TYPE_IDS } from "./plex.js";
@@ -232,7 +233,7 @@ export async function compositePoster(
   preview = false,
 ): Promise<Buffer> {
   const base = sharp(original).resize(POSTER_WIDTH, POSTER_HEIGHT, { fit: "cover" });
-  const layers: sharp.OverlayOptions[] = placeBadges(preset, item, preview).map((p) => ({
+  const layers: OverlayOptions[] = placeBadges(preset, item, preview).map((p) => ({
     input: p.rendered.svg,
     left: p.left,
     top: p.top,
