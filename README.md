@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/drxen00/metamagic/main/docker/icon.png" alt="MetaMagic" width="120" height="120" />
+  <img src="https://raw.githubusercontent.com/drxen00/metamagic/main/.github/logo.png" alt="MetaMagic" width="120" height="120" />
 </p>
 
 <h1 align="center">MetaMagic ✨</h1>

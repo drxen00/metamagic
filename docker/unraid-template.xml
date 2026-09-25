@@ -12,7 +12,7 @@
   <Category>MediaServer:Video Tools:Utilities</Category>
   <WebUI>http://[IP]:[PORT:3800]</WebUI>
   <TemplateURL/>
-  <Icon>https://raw.githubusercontent.com/drxen00/metamagic/main/docker/icon.png</Icon>
+  <Icon>https://raw.githubusercontent.com/drxen00/metamagic/main/docker/icon.png?v=2</Icon>
   <ExtraParams/>
   <PostArgs/>
   <DonateText>If MetaMagic is useful to you, you can buy me a coffee ☕</DonateText>
