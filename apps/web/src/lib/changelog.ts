@@ -13,6 +13,14 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.23.0",
+    title: "Overlay preview that always shows",
+    date: "2026-09-25",
+    fixed: [
+      "The overlay live preview now always shows the badge you're adding — even on a title that doesn't have that attribute (like a resolution badge on a TV show) — using a sample value so you can position it. On apply, each badge still only lands on items that actually have that attribute.",
+    ],
+  },
+  {
     version: "0.22.0",
     title: "Calmer notifications",
     date: "2026-09-25",

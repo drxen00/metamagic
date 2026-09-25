@@ -689,6 +689,9 @@ export default function OverlaysPage() {
                     <span className="font-semibold text-primary">Tip:</span> Drag a badge on the
                     poster to place it exactly. Changing its{" "}
                     <span className="text-foreground/80">Position</span> snaps it back to a corner.
+                    If this title doesn&apos;t have an attribute (e.g. no 4K), the preview shows a
+                    sample so you can still place it — on apply, each badge only lands on items that
+                    actually have it.
                   </p>
                 </>
               ) : (
