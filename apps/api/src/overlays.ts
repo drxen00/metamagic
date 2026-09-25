@@ -80,6 +80,35 @@ export function badgeLabel(badge: Badge, item: MediaItem): string | undefined {
   }
 }
 
+/**
+ * A representative label for the design preview, used only when the item doesn't
+ * supply a real value. This keeps a freshly-added badge visible and draggable in
+ * the live preview even on items that lack that attribute (e.g. a resolution
+ * badge on a TV show, which has no video stream at the series level). Real
+ * applies never use this — they skip items the badge doesn't actually match.
+ */
+function sampleLabel(badge: Badge): string {
+  switch (badge.type) {
+    case "resolution":
+      return "4K";
+    case "hdr":
+      return "HDR";
+    case "audio":
+      return "TrueHD 7.1";
+    case "rating":
+      return "★ 8.4";
+    case "new":
+      return "NEW";
+    case "text":
+      return badge.value?.trim() || "TEXT";
+  }
+}
+
+/** Real label, or (in preview mode) a sample so the badge is still shown. */
+function labelFor(badge: Badge, item: MediaItem, preview: boolean): string | undefined {
+  return badgeLabel(badge, item) ?? (preview ? sampleLabel(badge) : undefined);
+}
+
 // ---------- SVG badge rendering ----------
 
 function escapeXml(s: string): string {
@@ -163,11 +192,11 @@ interface PlacedBadge {
 }
 
 /** Resolve every applicable badge to a concrete pixel box on the 1000×1500 canvas. */
-function placeBadges(preset: OverlayPreset, item: MediaItem): PlacedBadge[] {
+function placeBadges(preset: OverlayPreset, item: MediaItem, preview = false): PlacedBadge[] {
   const perPosition = new Map<BadgePosition, number>();
   const placed: PlacedBadge[] = [];
   preset.badges.forEach((badge, index) => {
-    const label = badgeLabel(badge, item);
+    const label = labelFor(badge, item, preview);
     if (!label) return;
     const rendered = renderBadge(badge, label);
     // A dragged badge carries free (x, y) coords that override the preset corner.
@@ -184,8 +213,8 @@ function placeBadges(preset: OverlayPreset, item: MediaItem): PlacedBadge[] {
   return placed;
 }
 
-export function badgeLayout(preset: OverlayPreset, item: MediaItem): BadgeBox[] {
-  return placeBadges(preset, item).map((p) => ({
+export function badgeLayout(preset: OverlayPreset, item: MediaItem, preview = false): BadgeBox[] {
+  return placeBadges(preset, item, preview).map((p) => ({
     index: p.index,
     label: p.label,
     x: p.left / POSTER_WIDTH,
@@ -200,9 +229,10 @@ export async function compositePoster(
   original: Buffer,
   preset: OverlayPreset,
   item: MediaItem,
+  preview = false,
 ): Promise<Buffer> {
   const base = sharp(original).resize(POSTER_WIDTH, POSTER_HEIGHT, { fit: "cover" });
-  const layers: sharp.OverlayOptions[] = placeBadges(preset, item).map((p) => ({
+  const layers: sharp.OverlayOptions[] = placeBadges(preset, item, preview).map((p) => ({
     input: p.rendered.svg,
     left: p.left,
     top: p.top,

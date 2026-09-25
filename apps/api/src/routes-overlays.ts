@@ -62,7 +62,7 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
       const client = requirePlex();
       const item = await client.item(ratingKey);
       const { buffer } = await loadOriginalPoster(client, item, false);
-      const composed = await compositePoster(buffer, { id: 0, ...input }, item);
+      const composed = await compositePoster(buffer, { id: 0, ...input }, item, true);
 
       reply.header("Content-Type", "image/jpeg");
       reply.header("Cache-Control", "no-store");
@@ -84,7 +84,7 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
       if (!ratingKey) return reply.status(400).send({ error: "ratingKey is required" }) as never;
       const client = requirePlex();
       const item = await client.item(ratingKey);
-      return { boxes: badgeLayout({ id: 0, ...input }, item) };
+      return { boxes: badgeLayout({ id: 0, ...input }, item, true) };
     },
   );
 
