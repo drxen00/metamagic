@@ -67,7 +67,7 @@ import {
 import { discoverCollections } from "./discover.js";
 import { companyMovieStats, searchCompanies, searchKeywords } from "./tmdb.js";
 import { startJob, getJob } from "./jobs.js";
-import { getDiscordEvents, sendTestNotification } from "./notify.js";
+import { getDiscordEvents, notifyMediuxSweep, sendTestNotification, type MediuxSweepChange } from "./notify.js";
 import { automationsPaused } from "./scheduler.js";
 
 /** Public view of a watch — the stored YAML/fingerprint stay server-side. */
@@ -336,13 +336,13 @@ export function registerRuleRoutes(app: FastifyInstance): void {
       const client = requirePlex();
       const job = startJob<MediuxMatch>("mediux-sync", async (report) => {
         try {
-          const result = await syncWatch(client, watch, { force: true, report });
+          const outcome = await syncWatch(client, watch, { force: true, report });
           const after = await computeSignature(client, watch).catch(() => watch.lastSignature);
-          recordMediuxWatchSync(watch.ratingKey, after, result);
+          recordMediuxWatchSync(watch.ratingKey, after, outcome.result);
           recordActivity({
             kind: "mediux-sync",
             title: watch.title,
-            detail: result,
+            detail: outcome.result,
             status: "ok",
             trigger: "manual",
           });
@@ -369,32 +369,42 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     }
     const client = requirePlex();
     const job = startJob<MediuxMatch>("mediux-sync-all", async (report) => {
+      const changes: MediuxSweepChange[] = [];
       for (const w of watches) {
         report.setCurrent(`Syncing ${w.title}…`);
         try {
-          const result = await syncWatch(client, w, { force: true, report });
+          const outcome = await syncWatch(client, w, { force: true, report });
           const after = await computeSignature(client, w).catch(() => w.lastSignature);
-          recordMediuxWatchSync(w.ratingKey, after, result);
-          recordActivity({
-            kind: "mediux-sync",
-            title: w.title,
-            detail: result,
-            status: "ok",
-            trigger: "manual (sync all)",
-          });
+          recordMediuxWatchSync(w.ratingKey, after, outcome.result);
+          recordActivity(
+            {
+              kind: "mediux-sync",
+              title: w.title,
+              detail: outcome.result,
+              status: "ok",
+              trigger: "manual (sync all)",
+            },
+            { notify: false },
+          );
+          changes.push({ title: w.title, detail: outcome.result, status: "ok" });
         } catch (err) {
           const msg = err instanceof Error ? err.message : "sync failed";
           recordMediuxWatchSync(w.ratingKey, w.lastSignature, `Error: ${msg}`);
-          recordActivity({
-            kind: "mediux-sync",
-            title: w.title,
-            detail: msg,
-            status: "error",
-            trigger: "manual (sync all)",
-          });
+          recordActivity(
+            {
+              kind: "mediux-sync",
+              title: w.title,
+              detail: msg,
+              status: "error",
+              trigger: "manual (sync all)",
+            },
+            { notify: false },
+          );
+          changes.push({ title: w.title, detail: msg, status: "error" });
           report.log(`✗ ${w.title} — ${msg}`);
         }
       }
+      await notifyMediuxSweep(changes, "manual (sync all)");
     });
     return { jobId: job.id };
   });

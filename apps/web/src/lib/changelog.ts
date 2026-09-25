@@ -13,6 +13,18 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.22.0",
+    title: "Calmer notifications",
+    date: "2026-09-25",
+    added: [
+      "The coffee/support button now uses your chosen accent color so it fits the theme.",
+    ],
+    fixed: [
+      "MediUX auto-sync no longer re-reports every tracked show and collection when you add unrelated content — it now only touches (and only tells you about) the show or collection that actually changed.",
+      "Auto-sync sweeps send a single, batched Discord message summarizing what changed, instead of one ping per tracked item.",
+    ],
+  },
+  {
     version: "0.21.0",
     title: "Polish + a coffee",
     date: "2026-09-25",
