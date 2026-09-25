@@ -22,6 +22,7 @@ import {
   type RuleChange,
   type RuleEvaluation,
   type RuleRun,
+  type UntrackedCollection,
 } from "@metamagic/shared";
 import { plexClient, requirePlex } from "./client-store.js";
 import { getLibraryIndexCached } from "./mediux.js";
@@ -302,6 +303,23 @@ export function registerRuleRoutes(app: FastifyInstance): void {
   });
 
   app.get("/api/mediux/sync", async (): Promise<MediuxSyncState> => syncState());
+
+  // Collections that exist in Plex but aren't tracked by auto-sync yet (no MediUX
+  // set applied) — surfaced so the user can apply a set and start syncing them.
+  app.get("/api/mediux/untracked", async (): Promise<UntrackedCollection[]> => {
+    const client = requirePlex();
+    const tracked = new Set(listMediuxWatches().map((w) => w.ratingKey));
+    const collections = await client.collections();
+    return collections
+      .filter((c) => !tracked.has(c.ratingKey))
+      .map((c) => ({
+        ratingKey: c.ratingKey,
+        title: c.title,
+        thumb: c.thumb,
+        sectionTitle: c.sectionTitle,
+        childCount: c.childCount,
+      }));
+  });
 
   app.put("/api/mediux/sync", async (req): Promise<MediuxSyncState> => {
     const input = mediuxSyncSettingsSchema.parse(req.body);

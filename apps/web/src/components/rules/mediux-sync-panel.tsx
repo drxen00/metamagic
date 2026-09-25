@@ -8,13 +8,19 @@ import {
   Layers,
   Play,
   Pause,
+  Plus,
   RotateCw,
   Settings,
   Sparkles,
   Trash2,
   Tv,
 } from "lucide-react";
-import type { MediuxSort, MediuxSyncMode, MediuxSyncState } from "@metamagic/shared";
+import type {
+  MediuxSort,
+  MediuxSyncMode,
+  MediuxSyncState,
+  UntrackedCollection,
+} from "@metamagic/shared";
 import { api } from "@/lib/api";
 import { cn, imageUrl } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +64,12 @@ export function MediuxSyncPanel() {
   const { data } = useQuery({
     queryKey: ["mediux-sync"],
     queryFn: () => api<MediuxSyncState>("/api/mediux/sync"),
+  });
+
+  // Collections that exist but aren't tracked (no MediUX set applied yet).
+  const { data: untracked } = useQuery({
+    queryKey: ["mediux-untracked"],
+    queryFn: () => api<UntrackedCollection[]>("/api/mediux/untracked"),
   });
 
   const invalidate = () => qc.invalidateQueries({ queryKey: ["mediux-sync"] });
@@ -110,10 +122,35 @@ export function MediuxSyncPanel() {
 
   const onRunFinished = React.useCallback(() => {
     invalidate();
+    qc.invalidateQueries({ queryKey: ["mediux-untracked"] });
     qc.invalidateQueries({ queryKey: ["collections"] });
     qc.invalidateQueries({ queryKey: ["items"] });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qc]);
+
+  // "Add a MediUX set" flow for an untracked collection: paste YAML, apply it
+  // scoped to the collection (which also remembers it for auto-sync).
+  const [addTo, setAddTo] = React.useState<UntrackedCollection | null>(null);
+  const [yamlText, setYamlText] = React.useState("");
+  const [untrackedOpen, setUntrackedOpen] = React.useState(false);
+
+  const applySet = useMutation({
+    mutationFn: (v: { ratingKey: string; yaml: string }) =>
+      api<{ jobId: string }>("/api/mediux/apply", {
+        method: "POST",
+        body: JSON.stringify({
+          yaml: v.yaml,
+          scopeRatingKey: v.ratingKey,
+          scopeType: "collection",
+        }),
+      }),
+    onSuccess: (res) => {
+      setRunJobId(res.jobId);
+      setRunningTitle(addTo?.title ?? "collection");
+      setAddTo(null);
+      setYamlText("");
+    },
+  });
 
   const enabled = data?.enabled ?? false;
   const mode: MediuxSyncMode = data?.mode ?? "detect";
@@ -328,6 +365,71 @@ export function MediuxSyncPanel() {
               )}
             </>
           )}
+
+          {untracked && untracked.length > 0 && (
+            <div className="space-y-2 border-t border-border/60 pt-4">
+              <button
+                onClick={() => setUntrackedOpen((o) => !o)}
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+              >
+                {untrackedOpen ? (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5" />
+                )}
+                {untracked.length} collection{untracked.length === 1 ? "" : "s"} not synced yet
+              </button>
+
+              {untrackedOpen && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    These collections aren&apos;t tracked because no MediUX set has been applied to
+                    them (e.g. ones created from a scan or a rule). Add a set to keep each one styled
+                    and complete automatically.
+                  </p>
+                  <div className="space-y-1.5">
+                    {untracked.map((c) => (
+                      <div
+                        key={c.ratingKey}
+                        className="flex flex-wrap items-center gap-3 rounded-md border border-dashed border-border/60 bg-secondary/10 p-2.5"
+                      >
+                        <div className="relative flex h-14 w-9 shrink-0 items-center justify-center overflow-hidden rounded border border-sky-500/40 bg-sky-500/10">
+                          {c.thumb ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={imageUrl(c.thumb, 60, 90)}
+                              alt=""
+                              loading="lazy"
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <Layers className="h-4 w-4 text-sky-400" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate font-medium">{c.title}</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {c.childCount} item{c.childCount === 1 ? "" : "s"}
+                            {c.sectionTitle ? ` · ${c.sectionTitle}` : ""} · not tracked
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setAddTo(c);
+                            setYamlText("");
+                          }}
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add MediUX set
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -342,6 +444,48 @@ export function MediuxSyncPanel() {
           <Button variant="outline" onClick={() => setRunJobId(null)}>
             Close
           </Button>
+        </div>
+      </Dialog>
+
+      <Dialog
+        open={!!addTo}
+        onClose={() => setAddTo(null)}
+        title={`Add a MediUX set to “${addTo?.title ?? ""}”`}
+        className="max-w-2xl"
+      >
+        <div className="space-y-3">
+          <p className="text-sm text-muted-foreground">
+            On the collection&apos;s{" "}
+            <a
+              href="https://mediux.pro"
+              target="_blank"
+              rel="noreferrer"
+              className="text-primary underline-offset-2 hover:underline"
+            >
+              mediux.pro
+            </a>{" "}
+            set page, hit <strong>Copy YAML</strong> and paste it here. MetaMagic applies it and
+            starts keeping this collection in sync.
+          </p>
+          <textarea
+            value={yamlText}
+            onChange={(e) => setYamlText(e.target.value)}
+            rows={10}
+            placeholder="Paste MediUX YAML…"
+            className="w-full rounded-md border border-input bg-background/50 px-3 py-2 font-mono text-xs leading-relaxed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setAddTo(null)}>
+              Cancel
+            </Button>
+            <Button
+              loading={applySet.isPending}
+              disabled={!yamlText.trim()}
+              onClick={() => addTo && applySet.mutate({ ratingKey: addTo.ratingKey, yaml: yamlText })}
+            >
+              <Plus className="h-4 w-4" /> Apply &amp; track
+            </Button>
+          </div>
         </div>
       </Dialog>
     </>
