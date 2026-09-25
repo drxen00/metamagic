@@ -13,6 +13,14 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.25.0",
+    title: "Track any collection",
+    date: "2026-09-25",
+    added: [
+      "MediUX Auto-Sync now lists collections that aren't tracked yet (ones created from a scan or rule, with no MediUX set applied) under a “not synced yet” section — paste a set to apply it and start syncing that collection.",
+    ],
+  },
+  {
     version: "0.24.0",
     title: "Security updates",
     date: "2026-09-25",

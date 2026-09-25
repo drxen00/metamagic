@@ -647,6 +647,19 @@ export interface MediuxSyncState {
   watches: MediuxWatch[];
 }
 
+/**
+ * A Plex collection that isn't tracked by MediUX Auto-Sync yet, because no
+ * MediUX set has been applied to it (e.g. a collection just created from the
+ * "Collections you could create" scan or a rule). Apply a set to start tracking.
+ */
+export interface UntrackedCollection {
+  ratingKey: string;
+  title: string;
+  thumb?: string;
+  sectionTitle?: string;
+  childCount: number;
+}
+
 export const mediuxSyncSettingsSchema = z.object({
   enabled: z.boolean().optional(),
   mode: mediuxSyncModeSchema.optional(),
