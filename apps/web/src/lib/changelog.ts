@@ -13,6 +13,14 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.26.0",
+    title: "Generate collection posters",
+    date: "2026-09-27",
+    added: [
+      "New “Generate poster” button on any collection: MetaMagic builds a clean poster from the collection’s own artwork — a gradient with the title — that you can preview, tweak, and apply in one click.",
+    ],
+  },
+  {
     version: "0.25.0",
     title: "Track any collection",
     date: "2026-09-25",
