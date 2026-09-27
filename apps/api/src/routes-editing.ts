@@ -20,7 +20,7 @@ import type {
   TpdbSetResult,
 } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
-import { EDIT_TYPE_IDS, PlexError } from "./plex.js";
+import { EDIT_TYPE_IDS, PlexError, type PlexClient } from "./plex.js";
 import {
   deleteCollectionLink,
   getAppSetting,
@@ -44,6 +44,7 @@ import { fetchRemoteImage } from "./remote-image.js";
 import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
+import { generatePoster } from "./poster-gen.js";
 import { rememberMediuxSet } from "./mediux-sync.js";
 import { recordActivity } from "./activity.js";
 
@@ -483,6 +484,69 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     deleteCollectionLink(req.params.ratingKey);
     return { ok: true };
   });
+
+  // ---------- Generated collection posters ----------
+
+  // A landscape source image for the generator: a member's backdrop if we can
+  // get one, else a member/collection poster.
+  async function collectionPosterSource(client: PlexClient, ratingKey: string): Promise<Buffer> {
+    const children = await client.collectionChildren(ratingKey).catch(() => [] as MediaItem[]);
+    let path: string | undefined;
+    if (children[0]) {
+      const first = await client.item(children[0].ratingKey).catch(() => undefined);
+      path = first?.art ?? first?.thumb ?? children[0].thumb;
+    }
+    if (!path) {
+      const coll = await client.item(ratingKey).catch(() => undefined);
+      path = coll?.art ?? coll?.thumb;
+    }
+    if (!path) throw new PlexError("This collection has no artwork to build a poster from.", 400);
+    const res = await fetch(client.imageUrl(path, 1600, 900), { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new PlexError("Couldn't fetch a source image from Plex.", 502);
+    return Buffer.from(await res.arrayBuffer());
+  }
+
+  /** Preview a generated poster — streams the JPEG, uploads nothing. */
+  app.post<{ Params: { ratingKey: string } }>(
+    "/api/collections/:ratingKey/poster/generate",
+    async (req, reply) => {
+      const body = (req.body ?? {}) as { title?: string; accent?: string };
+      const client = requirePlex();
+      const coll = await client.item(req.params.ratingKey);
+      const source = await collectionPosterSource(client, req.params.ratingKey);
+      const poster = await generatePoster(source, body.title?.trim() || coll.title, {
+        accent: body.accent,
+      });
+      reply.header("Content-Type", "image/jpeg");
+      reply.header("Cache-Control", "no-store");
+      return reply.send(poster);
+    },
+  );
+
+  /** Generate and apply the poster to the collection in Plex. */
+  app.post<{ Params: { ratingKey: string } }>(
+    "/api/collections/:ratingKey/poster/apply",
+    async (req) => {
+      const body = (req.body ?? {}) as { title?: string; accent?: string };
+      const client = requirePlex();
+      const coll = await client.item(req.params.ratingKey);
+      const source = await collectionPosterSource(client, req.params.ratingKey);
+      const poster = await generatePoster(source, body.title?.trim() || coll.title, {
+        accent: body.accent,
+      });
+      await client.uploadArtwork(req.params.ratingKey, "poster", poster, "image/jpeg");
+      recordArtworkSource(req.params.ratingKey, "poster", "metamagic", "Generated poster");
+      forgetOriginalPoster(req.params.ratingKey);
+      recordActivity({
+        kind: "poster-set",
+        title: coll.title,
+        detail: "poster · generated",
+        status: "ok",
+        trigger: "manual",
+      });
+      return { ok: true };
+    },
+  );
 
   // ---------- ThePosterDB set import (collections) ----------
 

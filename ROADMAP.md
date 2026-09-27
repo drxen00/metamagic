@@ -53,6 +53,24 @@ One-click category collections, same engine as studio collections:
 - [ ] Oscars, BAFTA, Cannes, Emmy, Golden Globes, SAG, Sundance, Venice, Razzies…
       (self-contained and high wow-factor)
 
+### C2. Branded artwork — poster generator + logo overlays
+Make built-in collections/overlays look as good as Kometa's, but with our own
+assets (no lifting Kometa's trademarked logo PNGs). Asset strategy:
+
+- **Posters**: a generator that composites a source image (TMDb/MediUX/member
+  art) + gradient + title text into a clean collection poster. Gives MetaMagic
+  its own look and needs no third-party asset packs.
+- **Logos** (streaming/studio/network): source from **Simple Icons** (brand
+  SVGs under CC0) rather than copying Kometa's images — the artwork is genuinely
+  free, crisp at any size, and recolorable.
+- **Asset-agnostic**: the overlay/poster engine takes any logo/poster the user
+  points at, so the *tool* isn't the thing redistributing trademarks; ship a
+  tasteful CC0 default pack for out-of-the-box looks.
+
+- [x] Poster generator (backdrop/member art + gradient + title) — v1
+- [ ] Collage posters (2×4 member posters behind the gradient)
+- [ ] Logo-overlay upgrade backed by a Simple Icons (CC0) pack
+
 ### D. Auto-badge overlay layer
 Our overlay tool is a custom drag-to-place builder. Kometa auto-applies a catalog
 of badges library-wide. Add a rule-driven auto-badge layer on top of the existing

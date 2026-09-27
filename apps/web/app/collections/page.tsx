@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Download, ExternalLink, Pencil, Plus, Search, SquareStack, Trash2, X } from "lucide-react";
+import { Check, Download, ExternalLink, Pencil, Plus, Search, Sparkles, SquareStack, Trash2, X } from "lucide-react";
 import type {
   ArrSettings,
   CollectionCompleteness,
@@ -70,6 +70,7 @@ export default function CollectionsPage() {
   const [hideNotInLibrary, setHideNotInLibrary] = React.useState(false);
   const [hideUnreleased, setHideUnreleased] = React.useState(true);
   const [linkOpen, setLinkOpen] = React.useState(false);
+  const [genOpen, setGenOpen] = React.useState(false);
 
   // Radarr/Sonarr: request missing movies for download.
   const { data: arr } = useQuery({
@@ -376,6 +377,9 @@ export default function CollectionsPage() {
                       >
                         <Pencil className="h-3.5 w-3.5" /> Edit
                       </Button>
+                      <Button size="sm" variant="outline" onClick={() => setGenOpen(true)}>
+                        <Sparkles className="h-3.5 w-3.5" /> Generate poster
+                      </Button>
                       <Button
                         size="sm"
                         variant="destructive"
@@ -656,6 +660,19 @@ export default function CollectionsPage() {
         />
       )}
 
+      {open && (
+        <GeneratePosterDialog
+          open={genOpen}
+          onClose={() => setGenOpen(false)}
+          ratingKey={open.ratingKey}
+          defaultTitle={open.title}
+          onApplied={() => {
+            invalidate();
+            setGenOpen(false);
+          }}
+        />
+      )}
+
       {open && pickerOpen && (
         <PosterPicker
           open
@@ -847,6 +864,127 @@ function LinkCollectionDialog({
             Clear pin (back to automatic)
           </Button>
         )}
+      </div>
+    </Dialog>
+  );
+}
+
+function GeneratePosterDialog({
+  open,
+  onClose,
+  ratingKey,
+  defaultTitle,
+  onApplied,
+}: {
+  open: boolean;
+  onClose: () => void;
+  ratingKey: string;
+  defaultTitle: string;
+  onApplied: () => void;
+}) {
+  const [title, setTitle] = React.useState(defaultTitle);
+  const [src, setSrc] = React.useState<string | null>(null);
+  const [loading, setLoading] = React.useState(false);
+  const [applying, setApplying] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const generate = React.useCallback(
+    async (t: string) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const res = await fetch(`/api/collections/${ratingKey}/poster/generate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: t }),
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (!res.ok) {
+          const b = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(b.error ?? `Failed to generate (${res.status})`);
+        }
+        const blob = await res.blob();
+        setSrc((old) => {
+          if (old) URL.revokeObjectURL(old);
+          return URL.createObjectURL(blob);
+        });
+      } catch (e) {
+        setError((e as Error).message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [ratingKey],
+  );
+
+  React.useEffect(() => {
+    if (open) {
+      setTitle(defaultTitle);
+      void generate(defaultTitle);
+    } else {
+      setSrc((old) => {
+        if (old) URL.revokeObjectURL(old);
+        return null;
+      });
+    }
+  }, [open, defaultTitle, generate]);
+
+  const apply = async () => {
+    setApplying(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/collections/${ratingKey}/poster/apply`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title }),
+      });
+      if (!res.ok) {
+        const b = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(b.error ?? `Failed to apply (${res.status})`);
+      }
+      onApplied();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setApplying(false);
+    }
+  };
+
+  return (
+    <Dialog open={open} onClose={onClose} title="Generate a collection poster">
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          MetaMagic builds a poster from this collection&apos;s own artwork — the title over a
+          gradient. Tweak the title and regenerate, then apply it in Plex.
+        </p>
+        <div className="space-y-1.5">
+          <Label htmlFor="gen-title">Title</Label>
+          <Input id="gen-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+        </div>
+        <div className="flex justify-center py-1">
+          {src ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={src}
+              alt="Generated poster preview"
+              className={cn(
+                "h-80 rounded-lg border border-border/60 transition-opacity",
+                loading && "opacity-50",
+              )}
+            />
+          ) : (
+            <Skeleton className="h-80 w-[213px] rounded-lg" />
+          )}
+        </div>
+        {error && <p className="text-sm text-destructive">{error}</p>}
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" loading={loading} onClick={() => void generate(title)}>
+            Regenerate
+          </Button>
+          <Button loading={applying} disabled={!src || loading} onClick={apply}>
+            <Sparkles className="h-4 w-4" /> Apply to collection
+          </Button>
+        </div>
       </div>
     </Dialog>
   );
