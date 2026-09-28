@@ -13,6 +13,17 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.29.0",
+    title: "Auto streaming logos",
+    date: "2026-09-28",
+    added: [
+      "The Logo overlay badge has an “Auto — detect streaming service” mode: it stamps each title with the logo of the service it’s actually on (via TMDb), so one preset badges your whole library. Titles on an unsupported service get no badge.",
+    ],
+    fixed: [
+      "Collections can no longer be chosen in the overlay live preview — they have no quality/resolution attributes, so overlays never applied to them anyway.",
+    ],
+  },
+  {
     version: "0.28.0",
     title: "Logo overlays",
     date: "2026-09-28",

@@ -18,7 +18,7 @@ import {
   listOverlayPresets,
   updateOverlayPreset,
 } from "./db.js";
-import { applyOverlays, badgeLayout, compositePoster, loadOriginalPoster, restoreAll } from "./overlays.js";
+import { applyOverlays, badgeLayout, compositePoster, loadOriginalPoster, resolveOverlayForItem, restoreAll } from "./overlays.js";
 import { startJob } from "./jobs.js";
 import { recordActivity } from "./activity.js";
 
@@ -67,7 +67,8 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
       const client = requirePlex();
       const item = await client.item(ratingKey);
       const { buffer } = await loadOriginalPoster(client, item, false);
-      const composed = await compositePoster(buffer, { id: 0, ...input }, item, true);
+      const resolved = await resolveOverlayForItem({ id: 0, ...input }, item, { preview: true });
+      const composed = await compositePoster(buffer, resolved, item, true);
 
       reply.header("Content-Type", "image/jpeg");
       reply.header("Cache-Control", "no-store");
@@ -89,7 +90,8 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
       if (!ratingKey) return reply.status(400).send({ error: "ratingKey is required" }) as never;
       const client = requirePlex();
       const item = await client.item(ratingKey);
-      return { boxes: badgeLayout({ id: 0, ...input }, item, true) };
+      const resolved = await resolveOverlayForItem({ id: 0, ...input }, item, { preview: true });
+      return { boxes: badgeLayout(resolved, item, true) };
     },
   );
 
