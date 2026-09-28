@@ -8,13 +8,10 @@ import { PlexError, EDIT_TYPE_IDS } from "./plex.js";
 import type { PlexClient } from "./plex.js";
 import {
   deleteOriginalArtwork,
-  getAppSetting,
   getOriginalArtwork,
   recordOriginalArtwork,
 } from "./db.js";
 import type { ProgressReporter } from "./mediux.js";
-import { AUTO_LOGO, getLogo, providerToSlug, type LogoEntry } from "./logos.js";
-import { tmdbConfigured, tmdbWatchProviders } from "./tmdb.js";
 
 const ORIGINALS_DIR = path.join(CONFIG_DIR, "originals");
 fs.mkdirSync(ORIGINALS_DIR, { recursive: true });
@@ -81,8 +78,6 @@ export function badgeLabel(badge: Badge, item: MediaItem): string | undefined {
       return newLabel(item, badge);
     case "text":
       return badge.value?.trim() || undefined;
-    case "logo":
-      return getLogo(badge.value)?.title;
   }
 }
 
@@ -107,52 +102,12 @@ function sampleLabel(badge: Badge): string {
       return "NEW";
     case "text":
       return badge.value?.trim() || "TEXT";
-    case "logo":
-      return getLogo(badge.value)?.title ?? "LOGO";
   }
 }
 
 /** Real label, or (in preview mode) a sample so the badge is still shown. */
 function labelFor(badge: Badge, item: MediaItem, preview: boolean): string | undefined {
   return badgeLabel(badge, item) ?? (preview ? sampleLabel(badge) : undefined);
-}
-
-/**
- * Resolve "auto" streaming-logo badges to a concrete brand for this item, using
- * TMDb watch-providers (cached). Non-auto badges are untouched. In preview mode
- * an item with no detectable provider falls back to a sample logo so the badge
- * stays visible and draggable; on a real apply it resolves to "" and is skipped.
- */
-export async function resolveOverlayForItem(
-  preset: OverlayPreset,
-  item: MediaItem,
-  opts: { preview?: boolean } = {},
-): Promise<OverlayPreset> {
-  if (!preset.badges.some((b) => b.type === "logo" && b.value === AUTO_LOGO)) return preset;
-
-  let slug: string | undefined;
-  if (item.tmdbId && tmdbConfigured() && (item.type === "movie" || item.type === "show")) {
-    const region = getAppSetting("watch_region") || "US";
-    const mediaType = item.type === "show" ? "tv" : "movie";
-    try {
-      for (const name of await tmdbWatchProviders(item.tmdbId, mediaType, region)) {
-        const s = providerToSlug(name);
-        if (s) {
-          slug = s;
-          break;
-        }
-      }
-    } catch {
-      // TMDb hiccup — leave unresolved (skipped on apply, sampled in preview).
-    }
-  }
-  const value = slug ?? (opts.preview ? "netflix" : "");
-  return {
-    ...preset,
-    badges: preset.badges.map((b) =>
-      b.type === "logo" && b.value === AUTO_LOGO ? { ...b, value } : b,
-    ),
-  };
 }
 
 // ---------- SVG badge rendering ----------
@@ -187,26 +142,6 @@ function renderBadge(badge: Badge, label: string): RenderedBadge {
         font-family="DejaVu Sans, Helvetica, Arial, sans-serif"
         font-size="${fontSize}" font-weight="bold" fill="#ffffff"
         letter-spacing="${1.5 * scale}">${escapeXml(label)}</text>
-</svg>`;
-
-  return { svg: Buffer.from(svg), width, height, position: badge.position ?? "bottom-right" };
-}
-
-/** A brand logo (Simple Icons path) on a rounded pill, white on the badge colour. */
-function renderLogoBadge(badge: Badge, logo: LogoEntry): RenderedBadge {
-  const scale = badge.scale ?? 1;
-  const logoSize = Math.round(56 * scale);
-  const padX = Math.round(32 * scale);
-  const padY = Math.round(26 * scale);
-  const height = logoSize + padY * 2;
-  const width = logoSize + padX * 2;
-  const radius = Math.round(height / 5);
-  const s = logoSize / 24; // Simple Icons use a 24×24 viewBox.
-
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
-  <rect x="0" y="0" width="${width}" height="${height}" rx="${radius}" ry="${radius}"
-        fill="${badge.color ?? "#111827"}" fill-opacity="0.88"/>
-  <g transform="translate(${padX}, ${padY}) scale(${s})"><path d="${logo.path}" fill="#ffffff"/></g>
 </svg>`;
 
   return { svg: Buffer.from(svg), width, height, position: badge.position ?? "bottom-right" };
@@ -262,19 +197,9 @@ function placeBadges(preset: OverlayPreset, item: MediaItem, preview = false): P
   const perPosition = new Map<BadgePosition, number>();
   const placed: PlacedBadge[] = [];
   preset.badges.forEach((badge, index) => {
-    let rendered: RenderedBadge;
-    let label: string;
-    if (badge.type === "logo") {
-      const logo = getLogo(badge.value);
-      if (!logo) return;
-      rendered = renderLogoBadge(badge, logo);
-      label = logo.title;
-    } else {
-      const l = labelFor(badge, item, preview);
-      if (!l) return;
-      rendered = renderBadge(badge, l);
-      label = l;
-    }
+    const label = labelFor(badge, item, preview);
+    if (!label) return;
+    const rendered = renderBadge(badge, label);
     // A dragged badge carries free (x, y) coords that override the preset corner.
     const pos =
       typeof badge.x === "number" && typeof badge.y === "number"
@@ -405,14 +330,11 @@ export async function applyOverlayToItem(
 ): Promise<"applied" | "skipped"> {
   // Per-item metadata: needed for HDR/DV, which section listings omit.
   const item = await client.item(ratingKey);
-  const resolved = await resolveOverlayForItem(preset, item, { preview: false });
-  const applicable = resolved.badges.some((b) =>
-    b.type === "logo" ? !!getLogo(b.value) : !!badgeLabel(b, item),
-  );
+  const applicable = preset.badges.some((b) => badgeLabel(b, item));
   if (!applicable) return "skipped";
 
   const { buffer } = await loadOriginalPoster(client, item);
-  const composed = await compositePoster(buffer, resolved, item);
+  const composed = await compositePoster(buffer, preset, item);
   await client.uploadArtwork(ratingKey, "poster", composed, "image/jpeg");
   if (item.librarySectionId) {
     await client.lockArtwork(

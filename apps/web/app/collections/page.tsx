@@ -9,6 +9,7 @@ import type {
   CollectionCompleteness,
   EditCollectionInput,
   LibrarySection,
+  LogoOption,
   MediaItem,
   MissingCollectionItem,
   PagedResult,
@@ -23,7 +24,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, NativeSelect } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ItemDrawer } from "@/components/library/item-drawer";
@@ -887,6 +888,7 @@ function GeneratePosterDialog({
   const [title, setTitle] = React.useState(defaultTitle);
   const [style, setStyle] = React.useState<Style>("backdrop");
   const [source, setSource] = React.useState<string>("auto");
+  const [logo, setLogo] = React.useState<string>("none");
   const [src, setSrc] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [applying, setApplying] = React.useState(false);
@@ -898,8 +900,15 @@ function GeneratePosterDialog({
     enabled: open,
   });
 
+  const { data: logoList } = useQuery({
+    queryKey: ["overlay-logos"],
+    queryFn: () => api<LogoOption[]>("/api/overlays/logos"),
+    staleTime: Infinity,
+    enabled: open,
+  });
+
   const generate = React.useCallback(
-    async (p: { title: string; style: Style; source: string }) => {
+    async (p: { title: string; style: Style; source: string; logo: string }) => {
       setLoading(true);
       setError(null);
       try {
@@ -932,7 +941,8 @@ function GeneratePosterDialog({
       setTitle(defaultTitle);
       setStyle("backdrop");
       setSource("auto");
-      void generate({ title: defaultTitle, style: "backdrop", source: "auto" });
+      setLogo("none");
+      void generate({ title: defaultTitle, style: "backdrop", source: "auto", logo: "none" });
     } else {
       setSrc((old) => {
         if (old) URL.revokeObjectURL(old);
@@ -943,12 +953,16 @@ function GeneratePosterDialog({
 
   const pickStyle = (s: Style) => {
     setStyle(s);
-    void generate({ title, style: s, source });
+    void generate({ title, style: s, source, logo });
   };
   const pickSource = (s: string) => {
     setSource(s);
     setStyle("backdrop");
-    void generate({ title, style: "backdrop", source: s });
+    void generate({ title, style: "backdrop", source: s, logo });
+  };
+  const pickLogo = (l: string) => {
+    setLogo(l);
+    void generate({ title, style, source, logo: l });
   };
   const shuffle = () => {
     const members = sources?.members ?? [];
@@ -963,7 +977,7 @@ function GeneratePosterDialog({
       const res = await fetch(`/api/collections/${ratingKey}/poster/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, style, source }),
+        body: JSON.stringify({ title, style, source, logo }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1004,6 +1018,25 @@ function GeneratePosterDialog({
                 <Images className="mr-1 inline h-3 w-3" /> Collage
               </button>
             </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Streaming logo</Label>
+            <NativeSelect value={logo} onChange={(e) => pickLogo(e.target.value)} className="max-w-[15rem]">
+              <option value="none">None</option>
+              <option value="auto">Auto — detect the collection’s service</option>
+              {logoList?.map((l) => (
+                <option key={l.slug} value={l.slug}>
+                  {l.title}
+                </option>
+              ))}
+            </NativeSelect>
+            {logo === "auto" && (
+              <p className="text-[11px] text-muted-foreground">
+                Detects the service most of these titles are on (via TMDb; US region). Logos are
+                from the CC0 Simple Icons set.
+              </p>
+            )}
           </div>
 
           {style === "backdrop" && (
@@ -1076,7 +1109,7 @@ function GeneratePosterDialog({
             <Button
               variant="outline"
               loading={loading}
-              onClick={() => void generate({ title, style, source })}
+              onClick={() => void generate({ title, style, source, logo })}
             >
               Regenerate
             </Button>

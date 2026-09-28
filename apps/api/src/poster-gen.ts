@@ -90,6 +90,21 @@ function overlaySvg(title: string, accent: string): Buffer {
 export interface PosterOptions {
   /** Accent bar color; defaults to the MetaMagic purple. */
   accent?: string;
+  /** Optional brand logo (Simple Icons 24×24 path) stamped in the top-right. */
+  logo?: { path: string };
+}
+
+/** A brand logo on a subtle dark pill, for the top-right corner of a poster. */
+function logoBadge(path: string): { buf: Buffer; w: number; h: number } {
+  const logoSize = 96;
+  const padX = 36;
+  const padY = 30;
+  const w = logoSize + padX * 2;
+  const h = logoSize + padY * 2;
+  const r = Math.round(h / 5);
+  const s = logoSize / 24;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" rx="${r}" fill="#0a0a0f" fill-opacity="0.55"/><g transform="translate(${padX}, ${padY}) scale(${s})"><path d="${path}" fill="#ffffff"/></g></svg>`;
+  return { buf: Buffer.from(svg), w, h };
 }
 
 /** Compose a collection poster from source image bytes + a title. */
@@ -103,6 +118,10 @@ export async function generatePoster(
     .resize(W, H, { fit: "cover", position: "attention" })
     .modulate({ brightness: 0.92 });
   const layers: OverlayOptions[] = [{ input: overlaySvg(title, accent), top: 0, left: 0 }];
+  if (options.logo) {
+    const { buf, w, h } = logoBadge(options.logo.path);
+    layers.push({ input: buf, top: 40, left: W - 40 - w });
+  }
   return base.composite(layers).jpeg({ quality: 90 }).toBuffer();
 }
 

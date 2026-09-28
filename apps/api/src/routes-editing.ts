@@ -40,6 +40,7 @@ import {
   tmdbCollectionBackdropUrl,
   tmdbConfigured,
   tmdbSeasonArtwork,
+  tmdbWatchProviders,
   validateTmdbKey,
 } from "./tmdb.js";
 import { cleanCollectionTitle, resolveTmdbCollection } from "./collection-match.js";
@@ -50,6 +51,7 @@ import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
 import { generatePoster, composeCollageBase } from "./poster-gen.js";
+import { getLogo, providerToSlug } from "./logos.js";
 import { rememberMediuxSet } from "./mediux-sync.js";
 import { recordActivity } from "./activity.js";
 
@@ -547,6 +549,38 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     throw new PlexError("This collection has no artwork to build a poster from.", 400);
   }
 
+  /** Resolve the logo to stamp: a chosen brand, or the collection's dominant service. */
+  async function resolveLogo(
+    children: MediaItem[],
+    logoInput: string | undefined,
+  ): Promise<{ path: string } | undefined> {
+    if (!logoInput || logoInput === "none") return undefined;
+    if (logoInput !== "auto") {
+      const l = getLogo(logoInput);
+      return l ? { path: l.path } : undefined;
+    }
+    if (!tmdbConfigured()) return undefined;
+    const region = getAppSetting("watch_region") || "US";
+    const members = children
+      .filter((c) => c.tmdbId && (c.type === "movie" || c.type === "show"))
+      .slice(0, 8);
+    const tally = new Map<string, number>();
+    for (const m of members) {
+      try {
+        const mediaType = m.type === "show" ? "tv" : "movie";
+        for (const name of await tmdbWatchProviders(m.tmdbId!, mediaType, region)) {
+          const slug = providerToSlug(name);
+          if (slug) tally.set(slug, (tally.get(slug) ?? 0) + 1);
+        }
+      } catch {
+        // skip this member
+      }
+    }
+    const best = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    const l = getLogo(best);
+    return l ? { path: l.path } : undefined;
+  }
+
   async function buildPoster(
     client: PlexClient,
     ratingKey: string,
@@ -555,6 +589,7 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     const coll = await client.item(ratingKey);
     const children = await client.collectionChildren(ratingKey).catch(() => [] as MediaItem[]);
     const title = input.title?.trim() || coll.title;
+    const logo = await resolveLogo(children, input.logo);
 
     if (input.style === "collage") {
       const members = children.filter((c) => c.type !== "collection" && c.thumb).slice(0, 9);
@@ -563,11 +598,11 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       ).filter((b): b is Buffer => !!b);
       if (tiles.length === 0) throw new PlexError("No member posters to build a collage.", 400);
       const base = await composeCollageBase(tiles);
-      return { buffer: await generatePoster(base, title, { accent: input.accent }), title };
+      return { buffer: await generatePoster(base, title, { accent: input.accent, logo }), title };
     }
 
     const src = await resolveSource(client, ratingKey, coll, children, input.source);
-    return { buffer: await generatePoster(src, title, { accent: input.accent }), title };
+    return { buffer: await generatePoster(src, title, { accent: input.accent, logo }), title };
   }
 
   /** The source images the generator can build from — for the pick/shuffle UI. */
