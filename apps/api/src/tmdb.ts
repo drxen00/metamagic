@@ -1,5 +1,11 @@
 import type { ArtworkOption } from "@metamagic/shared";
-import { cacheMovieCollection, getAppSetting, getCachedMovieCollection } from "./db.js";
+import {
+  cacheMovieCollection,
+  cacheProviders,
+  getAppSetting,
+  getCachedMovieCollection,
+  getCachedProviders,
+} from "./db.js";
 
 const TMDB_API = "https://api.themoviedb.org/3";
 const IMG_PREVIEW = "https://image.tmdb.org/t/p/w342";
@@ -338,6 +344,26 @@ export interface TmdbCollectionParts {
 export async function tmdbCollectionBackdropUrl(collectionId: number): Promise<string | undefined> {
   const data = await tmdbFetch<{ backdrop_path?: string | null }>(`/collection/${collectionId}`);
   return data.backdrop_path ? `${IMG_FULL}${data.backdrop_path}` : undefined;
+}
+
+/**
+ * The subscription (flatrate) streaming providers a title is on in a region,
+ * e.g. ["Netflix", "Max"]. Cached per title+region. Powers auto logo overlays.
+ */
+export async function tmdbWatchProviders(
+  tmdbId: string,
+  mediaType: "movie" | "tv",
+  region = "US",
+): Promise<string[]> {
+  const key = `${mediaType}:${tmdbId}:${region}`;
+  const cached = getCachedProviders(key);
+  if (cached) return cached;
+  const data = await tmdbFetch<{
+    results?: Record<string, { flatrate?: { provider_name: string }[] }>;
+  }>(`/${mediaType}/${tmdbId}/watch/providers`);
+  const names = (data.results?.[region]?.flatrate ?? []).map((p) => p.provider_name);
+  cacheProviders(key, names);
+  return names;
 }
 
 /** All movies belonging to a TMDb collection. */

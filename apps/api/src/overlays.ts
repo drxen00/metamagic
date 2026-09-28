@@ -8,11 +8,13 @@ import { PlexError, EDIT_TYPE_IDS } from "./plex.js";
 import type { PlexClient } from "./plex.js";
 import {
   deleteOriginalArtwork,
+  getAppSetting,
   getOriginalArtwork,
   recordOriginalArtwork,
 } from "./db.js";
 import type { ProgressReporter } from "./mediux.js";
-import { getLogo, type LogoEntry } from "./logos.js";
+import { AUTO_LOGO, getLogo, providerToSlug, type LogoEntry } from "./logos.js";
+import { tmdbConfigured, tmdbWatchProviders } from "./tmdb.js";
 
 const ORIGINALS_DIR = path.join(CONFIG_DIR, "originals");
 fs.mkdirSync(ORIGINALS_DIR, { recursive: true });
@@ -113,6 +115,44 @@ function sampleLabel(badge: Badge): string {
 /** Real label, or (in preview mode) a sample so the badge is still shown. */
 function labelFor(badge: Badge, item: MediaItem, preview: boolean): string | undefined {
   return badgeLabel(badge, item) ?? (preview ? sampleLabel(badge) : undefined);
+}
+
+/**
+ * Resolve "auto" streaming-logo badges to a concrete brand for this item, using
+ * TMDb watch-providers (cached). Non-auto badges are untouched. In preview mode
+ * an item with no detectable provider falls back to a sample logo so the badge
+ * stays visible and draggable; on a real apply it resolves to "" and is skipped.
+ */
+export async function resolveOverlayForItem(
+  preset: OverlayPreset,
+  item: MediaItem,
+  opts: { preview?: boolean } = {},
+): Promise<OverlayPreset> {
+  if (!preset.badges.some((b) => b.type === "logo" && b.value === AUTO_LOGO)) return preset;
+
+  let slug: string | undefined;
+  if (item.tmdbId && tmdbConfigured() && (item.type === "movie" || item.type === "show")) {
+    const region = getAppSetting("watch_region") || "US";
+    const mediaType = item.type === "show" ? "tv" : "movie";
+    try {
+      for (const name of await tmdbWatchProviders(item.tmdbId, mediaType, region)) {
+        const s = providerToSlug(name);
+        if (s) {
+          slug = s;
+          break;
+        }
+      }
+    } catch {
+      // TMDb hiccup — leave unresolved (skipped on apply, sampled in preview).
+    }
+  }
+  const value = slug ?? (opts.preview ? "netflix" : "");
+  return {
+    ...preset,
+    badges: preset.badges.map((b) =>
+      b.type === "logo" && b.value === AUTO_LOGO ? { ...b, value } : b,
+    ),
+  };
 }
 
 // ---------- SVG badge rendering ----------
@@ -365,11 +405,14 @@ export async function applyOverlayToItem(
 ): Promise<"applied" | "skipped"> {
   // Per-item metadata: needed for HDR/DV, which section listings omit.
   const item = await client.item(ratingKey);
-  const applicable = preset.badges.some((b) => badgeLabel(b, item));
+  const resolved = await resolveOverlayForItem(preset, item, { preview: false });
+  const applicable = resolved.badges.some((b) =>
+    b.type === "logo" ? !!getLogo(b.value) : !!badgeLabel(b, item),
+  );
   if (!applicable) return "skipped";
 
   const { buffer } = await loadOriginalPoster(client, item);
-  const composed = await compositePoster(buffer, preset, item);
+  const composed = await compositePoster(buffer, resolved, item);
   await client.uploadArtwork(ratingKey, "poster", composed, "image/jpeg");
   if (item.librarySectionId) {
     await client.lockArtwork(

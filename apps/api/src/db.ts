@@ -122,6 +122,13 @@ db.exec(`
     fetched_at INTEGER NOT NULL
   );
 
+  /* Cached TMDb watch-provider lookups (per title + region) for auto logo overlays */
+  CREATE TABLE IF NOT EXISTS tmdb_provider_cache (
+    key TEXT PRIMARY KEY,
+    providers TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
+  );
+
   /* TMDb ids MetaMagic has already auto-requested from Radarr, so an auto
      sweep never re-requests the same movie. */
   CREATE TABLE IF NOT EXISTS arr_requested (
@@ -851,6 +858,28 @@ export function cacheMovieCollection(
        collection_name = excluded.collection_name,
        fetched_at = excluded.fetched_at`,
   ).run(tmdbId, collectionId, collectionName, Date.now());
+}
+
+const PROVIDER_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+
+export function getCachedProviders(key: string): string[] | undefined {
+  const row = db
+    .prepare("SELECT providers, fetched_at FROM tmdb_provider_cache WHERE key = ?")
+    .get(key) as { providers: string; fetched_at: number } | undefined;
+  if (!row || Date.now() - row.fetched_at > PROVIDER_CACHE_TTL_MS) return undefined;
+  try {
+    return JSON.parse(row.providers) as string[];
+  } catch {
+    return undefined;
+  }
+}
+
+export function cacheProviders(key: string, providers: string[]): void {
+  db.prepare(
+    `INSERT INTO tmdb_provider_cache (key, providers, fetched_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET providers = excluded.providers, fetched_at = excluded.fetched_at`,
+  ).run(key, JSON.stringify(providers), Date.now());
 }
 
 // ---------- Encrypted app settings (API keys etc.) ----------

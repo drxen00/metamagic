@@ -30,3 +30,32 @@ export function listLogos(): LogoOption[] {
 export function getLogo(slug: string | undefined): LogoEntry | undefined {
   return slug ? pack[slug] : undefined;
 }
+
+/** The special "auto" sentinel resolves the item's actual streaming provider. */
+export const AUTO_LOGO = "auto";
+
+/**
+ * Map a TMDb watch-provider name to a logo slug in our pack, or undefined when
+ * we don't ship that provider's (CC0) logo. Matched loosely so provider-name
+ * variants ("Apple TV Plus" / "Apple TV+") still resolve.
+ */
+export function providerToSlug(name: string): string | undefined {
+  const n = name.toLowerCase();
+  const rules: [RegExp, string][] = [
+    [/netflix/, "netflix"],
+    [/hbo\s*max/, "hbomax"],
+    [/\bmax\b/, "max"],
+    [/hbo/, "hbo"],
+    [/paramount/, "paramountplus"],
+    [/apple\s*tv/, "appletv"],
+    [/crunchyroll/, "crunchyroll"],
+    [/jellyfin/, "jellyfin"],
+    [/\bplex\b/, "plex"],
+    [/showtime/, "showtime"],
+    [/starz/, "starz"],
+    [/tubi/, "tubi"],
+    [/youtube/, "youtube"],
+  ];
+  for (const [re, slug] of rules) if (re.test(n) && pack[slug]) return slug;
+  return undefined;
+}

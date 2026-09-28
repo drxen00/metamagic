@@ -64,7 +64,7 @@ function newBadge(type: BadgeType): BadgeSpec {
     scale: 1,
     color: "#111827",
     value:
-      type === "text" ? "REMUX" : type === "new" ? "30" : type === "logo" ? "netflix" : undefined,
+      type === "text" ? "REMUX" : type === "new" ? "30" : type === "logo" ? "auto" : undefined,
   };
 }
 
@@ -243,6 +243,10 @@ export default function OverlaysPage() {
       ),
     enabled: !!sectionId && debouncedSearch.trim().length > 1,
   });
+
+  // Collections carry no per-item quality attributes, so overlays never apply to
+  // them — keep them out of the preview picker.
+  const previewMatches = searchResults?.items.filter((it) => it.type !== "collection") ?? [];
 
   // Re-render the preview whenever the design or chosen item changes
   const renderPreview = React.useCallback(async () => {
@@ -502,6 +506,7 @@ export default function OverlaysPage() {
                             updateBadge(i, { value: slug, ...(hex ? { color: hex } : {}) });
                           }}
                         >
+                          <option value="auto">Auto — detect streaming service</option>
                           {logos?.map((l) => (
                             <option key={l.slug} value={l.slug}>
                               {l.title}
@@ -509,7 +514,9 @@ export default function OverlaysPage() {
                           ))}
                         </NativeSelect>
                         <p className="text-[11px] text-muted-foreground">
-                          Logos are from the CC0 Simple Icons set. Not every service is available.
+                          {badge.value === "auto"
+                            ? "Stamps each title with the logo of the service it’s actually on (via TMDb; US region). Titles on an unsupported service get no badge."
+                            : "Logos are from the CC0 Simple Icons set. Not every service is available."}
                         </p>
                       </div>
                     )}
@@ -661,10 +668,10 @@ export default function OverlaysPage() {
                 />
                 {debouncedSearch.trim().length > 1 && searchResults && (
                   <div className="absolute z-20 mt-1 max-h-56 w-full space-y-0.5 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
-                    {searchResults.items.length === 0 ? (
+                    {previewMatches.length === 0 ? (
                       <p className="px-2 py-1.5 text-sm text-muted-foreground">No matches.</p>
                     ) : (
-                      searchResults.items.map((it) => (
+                      previewMatches.map((it) => (
                         <button
                           key={it.ratingKey}
                           onClick={() => {
