@@ -3,10 +3,12 @@ import {
   applyOverlaySchema,
   overlayPresetInputSchema,
   type BadgeBox,
+  type LogoOption,
   type OverlayPreset,
   type OverlayStatus,
 } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
+import { listLogos } from "./logos.js";
 import {
   countOriginalArtwork,
   createOverlayPreset,
@@ -24,6 +26,9 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
   // ---------- Presets ----------
 
   app.get("/api/overlays/presets", async (): Promise<OverlayPreset[]> => listOverlayPresets());
+
+  /** Brand logos available to "logo" badges (CC0 Simple Icons pack). */
+  app.get("/api/overlays/logos", async (): Promise<LogoOption[]> => listLogos());
 
   app.post("/api/overlays/presets", async (req): Promise<OverlayPreset> => {
     const input = overlayPresetInputSchema.parse(req.body);

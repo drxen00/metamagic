@@ -70,7 +70,8 @@ assets (no lifting Kometa's trademarked logo PNGs). Asset strategy:
 - [x] Poster generator (backdrop/member art + gradient + title) — v1
 - [x] Poster source controls — shuffle, pick a member, prefer collection/TMDb backdrop
 - [x] Collage posters (member posters behind the gradient)
-- [ ] Logo-overlay upgrade backed by a Simple Icons (CC0) pack
+- [x] Logo overlay badges — a CC0 Simple Icons pack (streaming brands), pickable in the overlay designer
+- [ ] Rule-driven **auto**-badge system (auto-apply logos/badges by detected provider/attribute)
 
 ### D. Auto-badge overlay layer
 Our overlay tool is a custom drag-to-place builder. Kometa auto-applies a catalog

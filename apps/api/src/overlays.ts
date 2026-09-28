@@ -12,6 +12,7 @@ import {
   recordOriginalArtwork,
 } from "./db.js";
 import type { ProgressReporter } from "./mediux.js";
+import { getLogo, type LogoEntry } from "./logos.js";
 
 const ORIGINALS_DIR = path.join(CONFIG_DIR, "originals");
 fs.mkdirSync(ORIGINALS_DIR, { recursive: true });
@@ -78,6 +79,8 @@ export function badgeLabel(badge: Badge, item: MediaItem): string | undefined {
       return newLabel(item, badge);
     case "text":
       return badge.value?.trim() || undefined;
+    case "logo":
+      return getLogo(badge.value)?.title;
   }
 }
 
@@ -102,6 +105,8 @@ function sampleLabel(badge: Badge): string {
       return "NEW";
     case "text":
       return badge.value?.trim() || "TEXT";
+    case "logo":
+      return getLogo(badge.value)?.title ?? "LOGO";
   }
 }
 
@@ -142,6 +147,26 @@ function renderBadge(badge: Badge, label: string): RenderedBadge {
         font-family="DejaVu Sans, Helvetica, Arial, sans-serif"
         font-size="${fontSize}" font-weight="bold" fill="#ffffff"
         letter-spacing="${1.5 * scale}">${escapeXml(label)}</text>
+</svg>`;
+
+  return { svg: Buffer.from(svg), width, height, position: badge.position ?? "bottom-right" };
+}
+
+/** A brand logo (Simple Icons path) on a rounded pill, white on the badge colour. */
+function renderLogoBadge(badge: Badge, logo: LogoEntry): RenderedBadge {
+  const scale = badge.scale ?? 1;
+  const logoSize = Math.round(56 * scale);
+  const padX = Math.round(32 * scale);
+  const padY = Math.round(26 * scale);
+  const height = logoSize + padY * 2;
+  const width = logoSize + padX * 2;
+  const radius = Math.round(height / 5);
+  const s = logoSize / 24; // Simple Icons use a 24×24 viewBox.
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+  <rect x="0" y="0" width="${width}" height="${height}" rx="${radius}" ry="${radius}"
+        fill="${badge.color ?? "#111827"}" fill-opacity="0.88"/>
+  <g transform="translate(${padX}, ${padY}) scale(${s})"><path d="${logo.path}" fill="#ffffff"/></g>
 </svg>`;
 
   return { svg: Buffer.from(svg), width, height, position: badge.position ?? "bottom-right" };
@@ -197,9 +222,19 @@ function placeBadges(preset: OverlayPreset, item: MediaItem, preview = false): P
   const perPosition = new Map<BadgePosition, number>();
   const placed: PlacedBadge[] = [];
   preset.badges.forEach((badge, index) => {
-    const label = labelFor(badge, item, preview);
-    if (!label) return;
-    const rendered = renderBadge(badge, label);
+    let rendered: RenderedBadge;
+    let label: string;
+    if (badge.type === "logo") {
+      const logo = getLogo(badge.value);
+      if (!logo) return;
+      rendered = renderLogoBadge(badge, logo);
+      label = logo.title;
+    } else {
+      const l = labelFor(badge, item, preview);
+      if (!l) return;
+      rendered = renderBadge(badge, l);
+      label = l;
+    }
     // A dragged badge carries free (x, y) coords that override the preset corner.
     const pos =
       typeof badge.x === "number" && typeof badge.y === "number"

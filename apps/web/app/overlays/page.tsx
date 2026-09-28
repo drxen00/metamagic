@@ -19,6 +19,7 @@ import type {
   BadgePosition,
   BadgeType,
   LibrarySection,
+  LogoOption,
   MediaItem,
   OverlayPreset,
   OverlayStatus,
@@ -42,6 +43,7 @@ const BADGE_TYPES: { id: BadgeType; label: string; hint: string }[] = [
   { id: "rating", label: "Rating", hint: "★ audience score" },
   { id: "new", label: "New", hint: "recently added" },
   { id: "text", label: "Custom text", hint: "your own label" },
+  { id: "logo", label: "Logo", hint: "streaming service" },
 ];
 
 const POSITIONS: { id: BadgePosition; label: string }[] = [
@@ -61,7 +63,8 @@ function newBadge(type: BadgeType): BadgeSpec {
     position: type === "rating" ? "bottom-right" : "top-left",
     scale: 1,
     color: "#111827",
-    value: type === "text" ? "REMUX" : type === "new" ? "30" : undefined,
+    value:
+      type === "text" ? "REMUX" : type === "new" ? "30" : type === "logo" ? "netflix" : undefined,
   };
 }
 
@@ -205,6 +208,12 @@ export default function OverlaysPage() {
   const { data: status } = useQuery({
     queryKey: ["overlay-status"],
     queryFn: () => api<OverlayStatus>("/api/overlays/status"),
+  });
+
+  const { data: logos } = useQuery({
+    queryKey: ["overlay-logos"],
+    queryFn: () => api<LogoOption[]>("/api/overlays/logos"),
+    staleTime: Infinity,
   });
 
   React.useEffect(() => {
@@ -478,6 +487,30 @@ export default function OverlaysPage() {
                           onChange={(e) => updateBadge(i, { value: e.target.value })}
                           className="max-w-xs"
                         />
+                      </div>
+                    )}
+
+                    {badge.type === "logo" && (
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Brand</Label>
+                        <NativeSelect
+                          className="max-w-xs"
+                          value={badge.value ?? ""}
+                          onChange={(e) => {
+                            const slug = e.target.value;
+                            const hex = logos?.find((l) => l.slug === slug)?.hex;
+                            updateBadge(i, { value: slug, ...(hex ? { color: hex } : {}) });
+                          }}
+                        >
+                          {logos?.map((l) => (
+                            <option key={l.slug} value={l.slug}>
+                              {l.title}
+                            </option>
+                          ))}
+                        </NativeSelect>
+                        <p className="text-[11px] text-muted-foreground">
+                          Logos are from the CC0 Simple Icons set. Not every service is available.
+                        </p>
                       </div>
                     )}
 

@@ -13,6 +13,14 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.28.0",
+    title: "Logo overlays",
+    date: "2026-09-28",
+    added: [
+      "New “Logo” overlay badge: drop a streaming-service logo (Netflix, Max, Apple TV, Paramount+, Crunchyroll, and more) onto posters, positionable and recolorable like any other badge. Logos are from the CC0 Simple Icons set.",
+    ],
+  },
+  {
     version: "0.27.0",
     title: "Better generated posters",
     date: "2026-09-28",
