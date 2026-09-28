@@ -6,6 +6,7 @@ import {
   integrationsSchema,
   linkCollectionSchema,
   mediuxImportSchema,
+  posterGenerateSchema,
   tpdbSetSchema,
 } from "@metamagic/shared";
 import type {
@@ -17,6 +18,8 @@ import type {
   MediaItem,
   MediuxMatch,
   MissingCollectionItem,
+  PosterGenerateInput,
+  PosterSources,
   TpdbSetResult,
 } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
@@ -34,6 +37,8 @@ import {
   searchTmdbCollection,
   searchTmdbCollections,
   tmdbArtwork,
+  tmdbCollectionBackdropUrl,
+  tmdbConfigured,
   tmdbSeasonArtwork,
   validateTmdbKey,
 } from "./tmdb.js";
@@ -44,7 +49,7 @@ import { fetchRemoteImage } from "./remote-image.js";
 import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
-import { generatePoster } from "./poster-gen.js";
+import { generatePoster, composeCollageBase } from "./poster-gen.js";
 import { rememberMediuxSet } from "./mediux-sync.js";
 import { recordActivity } from "./activity.js";
 
@@ -487,39 +492,110 @@ export function registerEditingRoutes(app: FastifyInstance): void {
 
   // ---------- Generated collection posters ----------
 
-  // A landscape source image for the generator: a member's backdrop if we can
-  // get one, else a member/collection poster.
-  async function collectionPosterSource(client: PlexClient, ratingKey: string): Promise<Buffer> {
-    const children = await client.collectionChildren(ratingKey).catch(() => [] as MediaItem[]);
-    let path: string | undefined;
-    if (children[0]) {
-      const first = await client.item(children[0].ratingKey).catch(() => undefined);
-      path = first?.art ?? first?.thumb ?? children[0].thumb;
-    }
-    if (!path) {
-      const coll = await client.item(ratingKey).catch(() => undefined);
-      path = coll?.art ?? coll?.thumb;
-    }
-    if (!path) throw new PlexError("This collection has no artwork to build a poster from.", 400);
-    const res = await fetch(client.imageUrl(path, 1600, 900), { signal: AbortSignal.timeout(20_000) });
-    if (!res.ok) throw new PlexError("Couldn't fetch a source image from Plex.", 502);
+  // ---------- Generated collection posters ----------
+
+  async function fetchImg(client: PlexClient, pathOrUrl: string, w: number, h: number): Promise<Buffer> {
+    const url = /^https?:\/\//i.test(pathOrUrl) ? pathOrUrl : client.imageUrl(pathOrUrl, w, h);
+    const res = await fetch(url, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new PlexError("Couldn't fetch a source image.", 502);
     return Buffer.from(await res.arrayBuffer());
   }
+
+  async function tmdbCollectionBackdrop(
+    ratingKey: string,
+    coll: MediaItem,
+    children: MediaItem[],
+  ): Promise<string | undefined> {
+    if (!tmdbConfigured()) return undefined;
+    const resolved = await resolveTmdbCollection(ratingKey, coll.title, children).catch(() => undefined);
+    if (!resolved) return undefined;
+    return tmdbCollectionBackdropUrl(resolved.id).catch(() => undefined);
+  }
+
+  /** Resolve the source (background) image for the "backdrop" style. */
+  async function resolveSource(
+    client: PlexClient,
+    ratingKey: string,
+    coll: MediaItem,
+    children: MediaItem[],
+    source: string | undefined,
+  ): Promise<Buffer> {
+    const members = children.filter((c) => c.type !== "collection");
+    // An explicit member ratingKey → that member's backdrop, else its poster.
+    if (source && !["auto", "collection", "tmdb"].includes(source)) {
+      const full = await client.item(source).catch(() => undefined);
+      const path = full?.art ?? full?.thumb;
+      if (path) return fetchImg(client, path, 1600, 900);
+    }
+    if (source === "collection" && (coll.art || coll.thumb)) {
+      return fetchImg(client, (coll.art ?? coll.thumb)!, 1600, 900);
+    }
+    if (source === "tmdb") {
+      const url = await tmdbCollectionBackdrop(ratingKey, coll, children);
+      if (url) return fetchImg(client, url, 1600, 900);
+    }
+    // Auto: prefer the collection's own backdrop, then TMDb, then a member's.
+    if (coll.art) return fetchImg(client, coll.art, 1600, 900);
+    const tmdb = await tmdbCollectionBackdrop(ratingKey, coll, children);
+    if (tmdb) return fetchImg(client, tmdb, 1600, 900);
+    if (members[0]) {
+      const full = await client.item(members[0].ratingKey).catch(() => undefined);
+      const path = full?.art ?? full?.thumb ?? members[0].thumb;
+      if (path) return fetchImg(client, path, 1600, 900);
+    }
+    if (coll.thumb) return fetchImg(client, coll.thumb, 1600, 900);
+    throw new PlexError("This collection has no artwork to build a poster from.", 400);
+  }
+
+  async function buildPoster(
+    client: PlexClient,
+    ratingKey: string,
+    input: PosterGenerateInput,
+  ): Promise<{ buffer: Buffer; title: string }> {
+    const coll = await client.item(ratingKey);
+    const children = await client.collectionChildren(ratingKey).catch(() => [] as MediaItem[]);
+    const title = input.title?.trim() || coll.title;
+
+    if (input.style === "collage") {
+      const members = children.filter((c) => c.type !== "collection" && c.thumb).slice(0, 9);
+      const tiles = (
+        await Promise.all(members.map((m) => fetchImg(client, m.thumb!, 400, 600).catch(() => undefined)))
+      ).filter((b): b is Buffer => !!b);
+      if (tiles.length === 0) throw new PlexError("No member posters to build a collage.", 400);
+      const base = await composeCollageBase(tiles);
+      return { buffer: await generatePoster(base, title, { accent: input.accent }), title };
+    }
+
+    const src = await resolveSource(client, ratingKey, coll, children, input.source);
+    return { buffer: await generatePoster(src, title, { accent: input.accent }), title };
+  }
+
+  /** The source images the generator can build from — for the pick/shuffle UI. */
+  app.get<{ Params: { ratingKey: string } }>(
+    "/api/collections/:ratingKey/poster/sources",
+    async (req): Promise<PosterSources> => {
+      const client = requirePlex();
+      const coll = await client.item(req.params.ratingKey);
+      const children = await client.collectionChildren(req.params.ratingKey).catch(() => [] as MediaItem[]);
+      const members = children
+        .filter((c) => c.type !== "collection")
+        .slice(0, 30)
+        .map((c) => ({ ratingKey: c.ratingKey, title: c.title, thumb: c.thumb }));
+      const tmdb = await tmdbCollectionBackdrop(req.params.ratingKey, coll, children);
+      return { members, collectionArt: !!coll.art, tmdbBackdrop: !!tmdb };
+    },
+  );
 
   /** Preview a generated poster — streams the JPEG, uploads nothing. */
   app.post<{ Params: { ratingKey: string } }>(
     "/api/collections/:ratingKey/poster/generate",
     async (req, reply) => {
-      const body = (req.body ?? {}) as { title?: string; accent?: string };
+      const input = posterGenerateSchema.parse(req.body ?? {});
       const client = requirePlex();
-      const coll = await client.item(req.params.ratingKey);
-      const source = await collectionPosterSource(client, req.params.ratingKey);
-      const poster = await generatePoster(source, body.title?.trim() || coll.title, {
-        accent: body.accent,
-      });
+      const { buffer } = await buildPoster(client, req.params.ratingKey, input);
       reply.header("Content-Type", "image/jpeg");
       reply.header("Cache-Control", "no-store");
-      return reply.send(poster);
+      return reply.send(buffer);
     },
   );
 
@@ -527,20 +603,16 @@ export function registerEditingRoutes(app: FastifyInstance): void {
   app.post<{ Params: { ratingKey: string } }>(
     "/api/collections/:ratingKey/poster/apply",
     async (req) => {
-      const body = (req.body ?? {}) as { title?: string; accent?: string };
+      const input = posterGenerateSchema.parse(req.body ?? {});
       const client = requirePlex();
-      const coll = await client.item(req.params.ratingKey);
-      const source = await collectionPosterSource(client, req.params.ratingKey);
-      const poster = await generatePoster(source, body.title?.trim() || coll.title, {
-        accent: body.accent,
-      });
-      await client.uploadArtwork(req.params.ratingKey, "poster", poster, "image/jpeg");
+      const { buffer, title } = await buildPoster(client, req.params.ratingKey, input);
+      await client.uploadArtwork(req.params.ratingKey, "poster", buffer, "image/jpeg");
       recordArtworkSource(req.params.ratingKey, "poster", "metamagic", "Generated poster");
       forgetOriginalPoster(req.params.ratingKey);
       recordActivity({
         kind: "poster-set",
-        title: coll.title,
-        detail: "poster · generated",
+        title,
+        detail: `poster · generated (${input.style ?? "backdrop"})`,
         status: "ok",
         trigger: "manual",
       });

@@ -334,6 +334,12 @@ export interface TmdbCollectionParts {
   parts: (ResolvedTitle & { tmdbId: string })[];
 }
 
+/** A TMDb collection's backdrop image URL, if it has one. */
+export async function tmdbCollectionBackdropUrl(collectionId: number): Promise<string | undefined> {
+  const data = await tmdbFetch<{ backdrop_path?: string | null }>(`/collection/${collectionId}`);
+  return data.backdrop_path ? `${IMG_FULL}${data.backdrop_path}` : undefined;
+}
+
 /** All movies belonging to a TMDb collection. */
 export async function getTmdbCollectionParts(
   collectionId: number,

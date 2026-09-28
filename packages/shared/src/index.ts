@@ -660,6 +660,25 @@ export interface UntrackedCollection {
   childCount: number;
 }
 
+/** Candidate source images the poster generator can build a collection poster from. */
+export interface PosterSources {
+  /** Collection members (posters), for the "pick a source" / shuffle strip. */
+  members: { ratingKey: string; title: string; thumb?: string }[];
+  /** The collection has its own backdrop art. */
+  collectionArt: boolean;
+  /** A TMDb collection backdrop is available. */
+  tmdbBackdrop: boolean;
+}
+
+export const posterGenerateSchema = z.object({
+  title: z.string().optional(),
+  accent: z.string().optional(),
+  style: z.enum(["backdrop", "collage"]).optional(),
+  /** "auto" | "collection" | "tmdb" | a member ratingKey. */
+  source: z.string().optional(),
+});
+export type PosterGenerateInput = z.infer<typeof posterGenerateSchema>;
+
 export const mediuxSyncSettingsSchema = z.object({
   enabled: z.boolean().optional(),
   mode: mediuxSyncModeSchema.optional(),

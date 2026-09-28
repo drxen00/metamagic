@@ -3,7 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Download, ExternalLink, Pencil, Plus, Search, Sparkles, SquareStack, Trash2, X } from "lucide-react";
+import { Check, Download, ExternalLink, Images, Pencil, Plus, Search, Shuffle, Sparkles, SquareStack, Trash2, X } from "lucide-react";
 import type {
   ArrSettings,
   CollectionCompleteness,
@@ -13,6 +13,7 @@ import type {
   MissingCollectionItem,
   PagedResult,
   PlexCollection,
+  PosterSources,
   TmdbCollectionOption,
 } from "@metamagic/shared";
 import { api } from "@/lib/api";
@@ -882,22 +883,31 @@ function GeneratePosterDialog({
   defaultTitle: string;
   onApplied: () => void;
 }) {
+  type Style = "backdrop" | "collage";
   const [title, setTitle] = React.useState(defaultTitle);
+  const [style, setStyle] = React.useState<Style>("backdrop");
+  const [source, setSource] = React.useState<string>("auto");
   const [src, setSrc] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [applying, setApplying] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
 
+  const { data: sources } = useQuery({
+    queryKey: ["poster-sources", ratingKey],
+    queryFn: () => api<PosterSources>(`/api/collections/${ratingKey}/poster/sources`),
+    enabled: open,
+  });
+
   const generate = React.useCallback(
-    async (t: string) => {
+    async (p: { title: string; style: Style; source: string }) => {
       setLoading(true);
       setError(null);
       try {
         const res = await fetch(`/api/collections/${ratingKey}/poster/generate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: t }),
-          signal: AbortSignal.timeout(30_000),
+          body: JSON.stringify(p),
+          signal: AbortSignal.timeout(40_000),
         });
         if (!res.ok) {
           const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -920,7 +930,9 @@ function GeneratePosterDialog({
   React.useEffect(() => {
     if (open) {
       setTitle(defaultTitle);
-      void generate(defaultTitle);
+      setStyle("backdrop");
+      setSource("auto");
+      void generate({ title: defaultTitle, style: "backdrop", source: "auto" });
     } else {
       setSrc((old) => {
         if (old) URL.revokeObjectURL(old);
@@ -929,6 +941,21 @@ function GeneratePosterDialog({
     }
   }, [open, defaultTitle, generate]);
 
+  const pickStyle = (s: Style) => {
+    setStyle(s);
+    void generate({ title, style: s, source });
+  };
+  const pickSource = (s: string) => {
+    setSource(s);
+    setStyle("backdrop");
+    void generate({ title, style: "backdrop", source: s });
+  };
+  const shuffle = () => {
+    const members = sources?.members ?? [];
+    if (members.length === 0) return;
+    pickSource(members[Math.floor(Math.random() * members.length)].ratingKey);
+  };
+
   const apply = async () => {
     setApplying(true);
     setError(null);
@@ -936,7 +963,7 @@ function GeneratePosterDialog({
       const res = await fetch(`/api/collections/${ratingKey}/poster/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
+        body: JSON.stringify({ title, style, source }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -950,18 +977,116 @@ function GeneratePosterDialog({
     }
   };
 
+  const chip = (active: boolean) =>
+    cn(
+      "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors disabled:opacity-40",
+      active
+        ? "border-primary bg-primary/15 text-primary"
+        : "border-border text-muted-foreground hover:text-foreground",
+    );
+
   return (
-    <Dialog open={open} onClose={onClose} title="Generate a collection poster">
-      <div className="space-y-3">
-        <p className="text-sm text-muted-foreground">
-          MetaMagic builds a poster from this collection&apos;s own artwork — the title over a
-          gradient. Tweak the title and regenerate, then apply it in Plex.
-        </p>
-        <div className="space-y-1.5">
-          <Label htmlFor="gen-title">Title</Label>
-          <Input id="gen-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+    <Dialog open={open} onClose={onClose} title="Generate a collection poster" className="max-w-3xl">
+      <div className="grid gap-4 sm:grid-cols-[1fr_240px]">
+        <div className="order-2 space-y-3 sm:order-1">
+          <div className="space-y-1.5">
+            <Label htmlFor="gen-title">Title</Label>
+            <Input id="gen-title" value={title} onChange={(e) => setTitle(e.target.value)} />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label className="text-xs">Style</Label>
+            <div className="flex gap-1.5">
+              <button className={chip(style === "backdrop")} onClick={() => pickStyle("backdrop")}>
+                Backdrop
+              </button>
+              <button className={chip(style === "collage")} onClick={() => pickStyle("collage")}>
+                <Images className="mr-1 inline h-3 w-3" /> Collage
+              </button>
+            </div>
+          </div>
+
+          {style === "backdrop" && (
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">Background</Label>
+                <button
+                  className="inline-flex items-center gap-1 text-xs text-primary hover:underline disabled:opacity-40"
+                  disabled={!sources?.members.length}
+                  onClick={shuffle}
+                >
+                  <Shuffle className="h-3 w-3" /> Shuffle
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                <button className={chip(source === "auto")} onClick={() => pickSource("auto")}>
+                  Auto
+                </button>
+                {sources?.collectionArt && (
+                  <button
+                    className={chip(source === "collection")}
+                    onClick={() => pickSource("collection")}
+                  >
+                    Collection art
+                  </button>
+                )}
+                {sources?.tmdbBackdrop && (
+                  <button className={chip(source === "tmdb")} onClick={() => pickSource("tmdb")}>
+                    TMDb backdrop
+                  </button>
+                )}
+              </div>
+              {sources && sources.members.length > 0 && (
+                <div className="flex gap-1.5 overflow-x-auto pb-1">
+                  {sources.members.map((m) => (
+                    <button
+                      key={m.ratingKey}
+                      onClick={() => pickSource(m.ratingKey)}
+                      title={`Use ${m.title}'s artwork`}
+                      className={cn(
+                        "relative h-20 w-[3.4rem] shrink-0 overflow-hidden rounded border transition-all",
+                        source === m.ratingKey
+                          ? "border-primary ring-2 ring-primary"
+                          : "border-border/60 hover:border-primary/60",
+                      )}
+                    >
+                      {m.thumb ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={imageUrl(m.thumb, 80, 120)}
+                          alt=""
+                          loading="lazy"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <span className="flex h-full items-center justify-center bg-secondary/50 text-muted-foreground">
+                          ?
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {error && <p className="text-sm text-destructive">{error}</p>}
+
+          <div className="flex justify-end gap-2 pt-1">
+            <Button
+              variant="outline"
+              loading={loading}
+              onClick={() => void generate({ title, style, source })}
+            >
+              Regenerate
+            </Button>
+            <Button loading={applying} disabled={!src || loading} onClick={apply}>
+              <Sparkles className="h-4 w-4" /> Apply to collection
+            </Button>
+          </div>
         </div>
-        <div className="flex justify-center py-1">
+
+        <div className="order-1 flex justify-center sm:order-2">
           {src ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
@@ -975,15 +1100,6 @@ function GeneratePosterDialog({
           ) : (
             <Skeleton className="h-80 w-[213px] rounded-lg" />
           )}
-        </div>
-        {error && <p className="text-sm text-destructive">{error}</p>}
-        <div className="flex justify-end gap-2">
-          <Button variant="outline" loading={loading} onClick={() => void generate(title)}>
-            Regenerate
-          </Button>
-          <Button loading={applying} disabled={!src || loading} onClick={apply}>
-            <Sparkles className="h-4 w-4" /> Apply to collection
-          </Button>
         </div>
       </div>
     </Dialog>
