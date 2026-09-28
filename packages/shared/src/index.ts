@@ -727,6 +727,7 @@ export const badgeTypeSchema = z.enum([
   "rating",
   "new",
   "text",
+  "logo",
 ]);
 export type BadgeType = z.infer<typeof badgeTypeSchema>;
 
@@ -747,7 +748,7 @@ export const badgeSchema = z.object({
   scale: z.number().min(0.5).max(2).default(1),
   /** Background colour (hex) — the accent bar behind the label */
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#111827"),
-  /** For type "text": the literal label. For "new": days threshold as text. */
+  /** For type "text": the literal label. For "new": days threshold as text. For "logo": the brand slug. */
   value: z.string().optional(),
   /**
    * Free placement as a fraction of the poster (0–1, top-left anchor). When both
@@ -764,6 +765,14 @@ export const overlayPresetInputSchema = z.object({
   badges: z.array(badgeSchema).min(1, "Add at least one badge"),
 });
 export type OverlayPresetInput = z.infer<typeof overlayPresetInputSchema>;
+
+/** A brand logo available to a "logo" overlay badge (from the CC0 Simple Icons pack). */
+export interface LogoOption {
+  slug: string;
+  title: string;
+  /** Brand hex, for the picker swatch. */
+  hex: string;
+}
 
 export interface OverlayPreset extends OverlayPresetInput {
   id: number;
