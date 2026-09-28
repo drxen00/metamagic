@@ -68,7 +68,8 @@ assets (no lifting Kometa's trademarked logo PNGs). Asset strategy:
   tasteful CC0 default pack for out-of-the-box looks.
 
 - [x] Poster generator (backdrop/member art + gradient + title) — v1
-- [ ] Collage posters (2×4 member posters behind the gradient)
+- [x] Poster source controls — shuffle, pick a member, prefer collection/TMDb backdrop
+- [x] Collage posters (member posters behind the gradient)
 - [ ] Logo-overlay upgrade backed by a Simple Icons (CC0) pack
 
 ### D. Auto-badge overlay layer

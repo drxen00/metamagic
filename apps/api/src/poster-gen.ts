@@ -105,3 +105,34 @@ export async function generatePoster(
   const layers: OverlayOptions[] = [{ input: overlaySvg(title, accent), top: 0, left: 0 }];
   return base.composite(layers).jpeg({ quality: 90 }).toBuffer();
 }
+
+/**
+ * Build a 1000×1500 mosaic of poster tiles (cover-cropped grid), for the collage
+ * style. The result is a full-size image you can feed straight into
+ * generatePoster() to get the gradient + title on top. Tiles cycle if there are
+ * fewer than cols×rows of them.
+ */
+export async function composeCollageBase(
+  tiles: Buffer[],
+  cols = 3,
+  rows = 3,
+): Promise<Buffer> {
+  const cellW = Math.ceil(W / cols);
+  const cellH = Math.ceil(H / rows);
+  const usable = tiles.filter((t) => t && t.length > 0);
+  if (usable.length === 0) throw new Error("No tiles to build a collage from.");
+  const layers: OverlayOptions[] = [];
+  for (let i = 0; i < cols * rows; i++) {
+    const tile = usable[i % usable.length];
+    const buf = await sharp(tile)
+      .resize(cellW, cellH, { fit: "cover", position: "attention" })
+      .toBuffer();
+    layers.push({ input: buf, left: (i % cols) * cellW, top: Math.floor(i / cols) * cellH });
+  }
+  return sharp({
+    create: { width: W, height: H, channels: 3, background: { r: 10, g: 10, b: 15 } },
+  })
+    .composite(layers)
+    .jpeg({ quality: 90 })
+    .toBuffer();
+}

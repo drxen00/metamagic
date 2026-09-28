@@ -13,6 +13,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.27.0",
+    title: "Better generated posters",
+    date: "2026-09-28",
+    added: [
+      "The poster generator now lets you choose the background: shuffle through member art, click a specific title to use, or prefer the collection’s own backdrop / a TMDb collection backdrop.",
+      "New “Collage” style — a mosaic of member posters behind the gradient, the classic collection look.",
+    ],
+  },
+  {
     version: "0.26.0",
     title: "Generate collection posters",
     date: "2026-09-27",
