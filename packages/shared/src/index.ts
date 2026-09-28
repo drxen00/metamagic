@@ -676,6 +676,8 @@ export const posterGenerateSchema = z.object({
   style: z.enum(["backdrop", "collage"]).optional(),
   /** "auto" | "collection" | "tmdb" | a member ratingKey. */
   source: z.string().optional(),
+  /** Streaming logo to stamp: "auto" (detect), a logo slug, or "none"/omitted. */
+  logo: z.string().optional(),
 });
 export type PosterGenerateInput = z.infer<typeof posterGenerateSchema>;
 
@@ -727,7 +729,6 @@ export const badgeTypeSchema = z.enum([
   "rating",
   "new",
   "text",
-  "logo",
 ]);
 export type BadgeType = z.infer<typeof badgeTypeSchema>;
 
@@ -748,7 +749,7 @@ export const badgeSchema = z.object({
   scale: z.number().min(0.5).max(2).default(1),
   /** Background colour (hex) — the accent bar behind the label */
   color: z.string().regex(/^#[0-9a-fA-F]{6}$/).default("#111827"),
-  /** For type "text": the literal label. For "new": days threshold as text. For "logo": the brand slug. */
+  /** For type "text": the literal label. For "new": days threshold as text. */
   value: z.string().optional(),
   /**
    * Free placement as a fraction of the poster (0–1, top-left anchor). When both

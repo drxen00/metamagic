@@ -70,9 +70,8 @@ assets (no lifting Kometa's trademarked logo PNGs). Asset strategy:
 - [x] Poster generator (backdrop/member art + gradient + title) — v1
 - [x] Poster source controls — shuffle, pick a member, prefer collection/TMDb backdrop
 - [x] Collage posters (member posters behind the gradient)
-- [x] Logo overlay badges — a CC0 Simple Icons pack (streaming brands), pickable in the overlay designer
-- [x] Auto streaming-logo badge — detects each title's service via TMDb watch-providers and stamps the matching logo
-- [ ] Scheduled / on-new-content auto re-apply of an overlay preset (currently manual "Apply to library")
+- [x] Logo overlay badges — a CC0 Simple Icons pack (streaming brands)
+- [x] Streaming-service logos on generated collection posters — pick a service or "auto" (detect the collection's dominant service via TMDb watch-providers)
 - [ ] Watch-provider region setting in the UI (defaults to US)
 
 ### D. Auto-badge overlay layer
