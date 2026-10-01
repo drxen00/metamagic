@@ -184,7 +184,7 @@ export class PlexClient {
       "X-Plex-Container-Start": q.offset,
       "X-Plex-Container-Size": q.limit,
       sort: q.sort ?? "titleSort:asc",
-      includeCollections: 1,
+      includeCollections: q.excludeCollections ? 0 : 1,
       includeGuids: 1,
     };
     if (q.search) params.title = q.search;

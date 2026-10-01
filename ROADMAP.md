@@ -60,19 +60,21 @@ assets (no lifting Kometa's trademarked logo PNGs). Asset strategy:
 - **Posters**: a generator that composites a source image (TMDb/MediUX/member
   art) + gradient + title text into a clean collection poster. Gives MetaMagic
   its own look and needs no third-party asset packs.
-- **Logos** (streaming/studio/network): source from **Simple Icons** (brand
-  SVGs under CC0) rather than copying Kometa's images — the artwork is genuinely
-  free, crisp at any size, and recolorable.
+- **Logos** (streaming): the real, full-color service logos come from **TMDb's
+  watch-provider data** (JustWatch-sourced) — every service, kept current by
+  TMDb, used nominatively to label the service rather than copying Kometa's
+  images.
 - **Asset-agnostic**: the overlay/poster engine takes any logo/poster the user
-  points at, so the *tool* isn't the thing redistributing trademarks; ship a
-  tasteful CC0 default pack for out-of-the-box looks.
+  points at, so the *tool* isn't the thing redistributing trademarks.
 
 - [x] Poster generator (backdrop/member art + gradient + title) — v1
 - [x] Poster source controls — shuffle, pick a member, prefer collection/TMDb backdrop
 - [x] Collage posters (member posters behind the gradient)
-- [x] Logo overlay badges — a CC0 Simple Icons pack (streaming brands)
-- [x] Streaming-service logos on generated collection posters — pick a service or "auto" (detect the collection's dominant service via TMDb watch-providers)
+- [x] Real colored streaming logos stamped on **any** collection poster (generated,
+      uploaded, or MediUX-synced) — pick a service or "auto" (detect the dominant
+      service via TMDb watch-providers). Persists across MediUX re-syncs.
 - [ ] Watch-provider region setting in the UI (defaults to US)
+- [ ] Studio / network logos (TMDb has production-company logos; different source)
 
 ### D. Auto-badge overlay layer
 Our overlay tool is a custom drag-to-place builder. Kometa auto-applies a catalog

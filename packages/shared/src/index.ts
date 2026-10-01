@@ -84,6 +84,8 @@ export const libraryQuerySchema = z.object({
   genre: z.string().optional(),
   year: z.coerce.number().int().optional(),
   unwatched: z.coerce.boolean().optional(),
+  /** Drop collections from the listing (they have no quality attributes). */
+  excludeCollections: z.coerce.boolean().optional(),
 });
 export type LibraryQuery = z.infer<typeof libraryQuerySchema>;
 
@@ -676,10 +678,39 @@ export const posterGenerateSchema = z.object({
   style: z.enum(["backdrop", "collage"]).optional(),
   /** "auto" | "collection" | "tmdb" | a member ratingKey. */
   source: z.string().optional(),
-  /** Streaming logo to stamp: "auto" (detect), a logo slug, or "none"/omitted. */
-  logo: z.string().optional(),
 });
 export type PosterGenerateInput = z.infer<typeof posterGenerateSchema>;
+
+// ---------- Streaming logos (real, colored TMDb provider logos) ----------
+
+/** A streaming service for the logo picker, from TMDb's watch-provider list. */
+export interface ProviderOption {
+  /** TMDb provider id, as a string. */
+  id: string;
+  name: string;
+  /** Full URL to the provider's colored logo (TMDb image CDN). */
+  logoUrl: string;
+}
+
+/**
+ * Set (or clear) the persistent streaming logo stamped on a collection's poster.
+ * `provider` is "auto" (detect the dominant service), a TMDb provider id, or
+ * "none" to remove the logo and restore the clean poster.
+ */
+export const collectionLogoSchema = z.object({
+  provider: z.string().min(1),
+  region: z.string().optional(),
+});
+export type CollectionLogoInput = z.infer<typeof collectionLogoSchema>;
+
+/** The streaming logo currently stamped on a collection, if any. */
+export interface CollectionLogoState {
+  /** "auto", a TMDb provider id, or null when no logo is stamped. */
+  provider: string | null;
+  /** Resolved display name of the stamped service, when known. */
+  providerName?: string;
+  region?: string;
+}
 
 export const mediuxSyncSettingsSchema = z.object({
   enabled: z.boolean().optional(),
@@ -766,14 +797,6 @@ export const overlayPresetInputSchema = z.object({
   badges: z.array(badgeSchema).min(1, "Add at least one badge"),
 });
 export type OverlayPresetInput = z.infer<typeof overlayPresetInputSchema>;
-
-/** A brand logo available to a "logo" overlay badge (from the CC0 Simple Icons pack). */
-export interface LogoOption {
-  slug: string;
-  title: string;
-  /** Brand hex, for the picker swatch. */
-  hex: string;
-}
 
 export interface OverlayPreset extends OverlayPresetInput {
   id: number;

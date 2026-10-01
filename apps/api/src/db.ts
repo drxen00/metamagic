@@ -114,6 +114,19 @@ db.exec(`
     saved_at INTEGER NOT NULL
   );
 
+  /* Persistent streaming-logo stamp on a collection's poster. provider is a
+     TMDb provider id or "auto". base_file is the clean (pre-logo) poster backup,
+     so the logo can be re-stamped (after a MediUX re-sync) or removed cleanly. */
+  CREATE TABLE IF NOT EXISTS collection_logos (
+    rating_key TEXT PRIMARY KEY,
+    provider TEXT NOT NULL,
+    region TEXT NOT NULL,
+    base_file TEXT,
+    base_content_type TEXT,
+    stamped_hash TEXT,
+    updated_at INTEGER NOT NULL
+  );
+
   /* Cached TMDb movie → collection lookups so repeat discovery scans are cheap */
   CREATE TABLE IF NOT EXISTS tmdb_movie_cache (
     tmdb_id TEXT PRIMARY KEY,
@@ -657,6 +670,79 @@ export function countOriginalArtwork(): number {
   return row.n;
 }
 
+// ---------- Collection streaming-logo stamps ----------
+
+export interface CollectionLogoRow {
+  ratingKey: string;
+  provider: string;
+  region: string;
+  baseFile: string | null;
+  baseContentType: string | null;
+  /** sha256 of the stamped poster we last uploaded, to detect external changes. */
+  stampedHash: string | null;
+}
+
+function toCollectionLogoRow(r: {
+  rating_key: string;
+  provider: string;
+  region: string;
+  base_file: string | null;
+  base_content_type: string | null;
+  stamped_hash: string | null;
+}): CollectionLogoRow {
+  return {
+    ratingKey: r.rating_key,
+    provider: r.provider,
+    region: r.region,
+    baseFile: r.base_file,
+    baseContentType: r.base_content_type,
+    stampedHash: r.stamped_hash,
+  };
+}
+
+const COLLECTION_LOGO_COLS =
+  "rating_key, provider, region, base_file, base_content_type, stamped_hash";
+
+export function getCollectionLogo(ratingKey: string): CollectionLogoRow | undefined {
+  const row = db
+    .prepare(`SELECT ${COLLECTION_LOGO_COLS} FROM collection_logos WHERE rating_key = ?`)
+    .get(ratingKey) as Parameters<typeof toCollectionLogoRow>[0] | undefined;
+  return row ? toCollectionLogoRow(row) : undefined;
+}
+
+export function listCollectionLogos(): CollectionLogoRow[] {
+  return (
+    db.prepare(`SELECT ${COLLECTION_LOGO_COLS} FROM collection_logos`).all() as Parameters<
+      typeof toCollectionLogoRow
+    >[0][]
+  ).map(toCollectionLogoRow);
+}
+
+export function upsertCollectionLogo(input: {
+  ratingKey: string;
+  provider: string;
+  region: string;
+  baseFile: string | null;
+  baseContentType: string | null;
+  stampedHash: string | null;
+}): void {
+  db.prepare(
+    `INSERT INTO collection_logos (rating_key, provider, region, base_file, base_content_type, stamped_hash, updated_at)
+     VALUES (@ratingKey, @provider, @region, @baseFile, @baseContentType, @stampedHash, @updatedAt)
+     ON CONFLICT(rating_key) DO UPDATE SET
+       provider = excluded.provider,
+       region = excluded.region,
+       base_file = excluded.base_file,
+       base_content_type = excluded.base_content_type,
+       stamped_hash = excluded.stamped_hash,
+       updated_at = excluded.updated_at`,
+  ).run({ ...input, updatedAt: Date.now() });
+}
+
+export function deleteCollectionLogo(ratingKey: string): void {
+  db.prepare("DELETE FROM collection_logos WHERE rating_key = ?").run(ratingKey);
+}
+
 // ---------- MediUX auto-sync watches ----------
 
 interface MediuxWatchRow {
@@ -862,19 +948,20 @@ export function cacheMovieCollection(
 
 const PROVIDER_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
-export function getCachedProviders(key: string): string[] | undefined {
+/** Cached TMDb watch-provider payloads (per title+region, and the full list). */
+export function getCachedProviders<T = unknown>(key: string): T[] | undefined {
   const row = db
     .prepare("SELECT providers, fetched_at FROM tmdb_provider_cache WHERE key = ?")
     .get(key) as { providers: string; fetched_at: number } | undefined;
   if (!row || Date.now() - row.fetched_at > PROVIDER_CACHE_TTL_MS) return undefined;
   try {
-    return JSON.parse(row.providers) as string[];
+    return JSON.parse(row.providers) as T[];
   } catch {
     return undefined;
   }
 }
 
-export function cacheProviders(key: string, providers: string[]): void {
+export function cacheProviders(key: string, providers: unknown[]): void {
   db.prepare(
     `INSERT INTO tmdb_provider_cache (key, providers, fetched_at)
      VALUES (?, ?, ?)
