@@ -230,7 +230,7 @@ export default function OverlaysPage() {
     queryKey: ["overlay-preview-search", sectionId, debouncedSearch],
     queryFn: () =>
       api<{ items: MediaItem[] }>(
-        `/api/library/sections/${sectionId}/items?search=${encodeURIComponent(debouncedSearch)}&limit=8`,
+        `/api/library/sections/${sectionId}/items?search=${encodeURIComponent(debouncedSearch)}&limit=8&excludeCollections=1`,
       ),
     enabled: !!sectionId && debouncedSearch.trim().length > 1,
   });

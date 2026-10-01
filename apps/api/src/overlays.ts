@@ -360,7 +360,11 @@ export async function applyOverlays(
     let offset = 0;
     const limit = 200;
     for (;;) {
-      const page = await client.sectionItems(sectionId, { offset, limit });
+      const page = await client.sectionItems(sectionId, {
+        offset,
+        limit,
+        excludeCollections: true,
+      });
       targets.push(...page.items.map((i) => i.ratingKey));
       offset += limit;
       if (offset >= page.totalSize || page.items.length === 0) break;

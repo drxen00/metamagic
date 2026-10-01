@@ -21,7 +21,6 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^22.10.0",
-    "simple-icons": "^16.32.0",
     "typescript": "^5.7.0"
   }
 }

@@ -11,6 +11,7 @@ import {
 } from "./db.js";
 import { applyMediux, extractSetUrl, type ProgressReporter } from "./mediux.js";
 import { evaluateRule } from "./rules.js";
+import { restampCollectionLogo } from "./collection-logo.js";
 import { resolveTmdbCollection } from "./collection-match.js";
 import { recordActivity } from "./activity.js";
 import { notifyMediuxSweep, type MediuxSweepChange } from "./notify.js";
@@ -173,6 +174,18 @@ export async function syncWatch(
   const item = await client.item(watch.ratingKey).catch(() => undefined);
   const sectionId = item?.librarySectionId;
 
+  // After the MediUX set re-applies the collection poster, re-stamp any
+  // persistent streaming logo so it survives the sync. No-op without a logo.
+  const restampLogo = async () => {
+    try {
+      if (await restampCollectionLogo(client, watch.ratingKey)) {
+        log("• re-stamped the collection's streaming logo");
+      }
+    } catch (err) {
+      log(`✗ couldn't re-stamp streaming logo — ${err instanceof Error ? err.message : "failed"}`);
+    }
+  };
+
   if (watch.tmdbId && sectionId) {
     const rule = watchRule(watch, sectionId);
     // evaluateRule reports RuleChanges; surface each added film in the same
@@ -196,10 +209,14 @@ export async function syncWatch(
     };
     const evaluation = await evaluateRule(client, rule, { dryRun: false, report: ruleReport });
     const added = evaluation.toAdd.length;
-    if (added > 0) return { changed: true, added, result: `added ${added}, artwork re-applied` };
+    if (added > 0) {
+      await restampLogo();
+      return { changed: true, added, result: `added ${added}, artwork re-applied` };
+    }
     if (opts.force) {
       log("• re-applying the MediUX set to existing members");
       await applyMediux(client, watch.yaml, opts.report);
+      await restampLogo();
       return { changed: true, added: 0, result: "artwork re-applied" };
     }
     // Detect mode, nothing new joined the collection — no work, nothing to say.
@@ -210,6 +227,7 @@ export async function syncWatch(
   // an explicit force (manual/scheduled) — never spam on unrelated library growth.
   if (opts.force) {
     await applyMediux(client, watch.yaml, opts.report);
+    await restampLogo();
     return { changed: true, added: 0, result: "artwork re-applied" };
   }
   return { changed: false, added: 0, result: "no change" };

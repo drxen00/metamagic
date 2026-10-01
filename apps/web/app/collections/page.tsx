@@ -7,14 +7,15 @@ import { Check, Download, ExternalLink, Images, Pencil, Plus, Search, Shuffle, S
 import type {
   ArrSettings,
   CollectionCompleteness,
+  CollectionLogoState,
   EditCollectionInput,
   LibrarySection,
-  LogoOption,
   MediaItem,
   MissingCollectionItem,
   PagedResult,
   PlexCollection,
   PosterSources,
+  ProviderOption,
   TmdbCollectionOption,
 } from "@metamagic/shared";
 import { api } from "@/lib/api";
@@ -396,6 +397,8 @@ export default function CollectionsPage() {
             </div>
 
             <ProvenanceNote ratingKey={open.ratingKey} />
+
+            <StreamingLogoControl ratingKey={open.ratingKey} onChanged={invalidate} />
 
             {editing ? (
               <div className="space-y-1.5">
@@ -871,6 +874,95 @@ function LinkCollectionDialog({
   );
 }
 
+/**
+ * Persistent streaming-logo stamp for a collection. Works on whatever poster the
+ * collection currently has — generated, uploaded, or MediUX-synced — and the
+ * backend re-stamps it after MediUX re-syncs, so it isn't limited to generated
+ * posters. Uses real, colored TMDb provider logos.
+ */
+function StreamingLogoControl({
+  ratingKey,
+  onChanged,
+}: {
+  ratingKey: string;
+  onChanged: () => void;
+}) {
+  const qc = useQueryClient();
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState<string | null>(null);
+
+  const { data: state } = useQuery({
+    queryKey: ["collection-logo", ratingKey],
+    queryFn: () => api<CollectionLogoState>(`/api/collections/${ratingKey}/logo`),
+  });
+  const { data: providers } = useQuery({
+    queryKey: ["logo-providers"],
+    queryFn: () => api<ProviderOption[]>("/api/logos/providers"),
+    staleTime: Infinity,
+  });
+
+  const current = state?.provider ?? "none";
+  const selectedProvider = providers?.find((p) => p.id === current);
+  const tmdbOff = providers !== undefined && providers.length === 0;
+
+  const setLogo = async (provider: string) => {
+    setSaving(true);
+    setError(null);
+    try {
+      await api(`/api/collections/${ratingKey}/logo`, {
+        method: "PUT",
+        body: JSON.stringify({ provider }),
+      });
+      await qc.invalidateQueries({ queryKey: ["collection-logo", ratingKey] });
+      onChanged();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-xs">Streaming logo</Label>
+      <div className="flex items-center gap-2">
+        {selectedProvider && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={selectedProvider.logoUrl}
+            alt=""
+            className="h-7 w-7 shrink-0 rounded bg-white object-contain p-0.5"
+          />
+        )}
+        <NativeSelect
+          value={current}
+          disabled={saving || tmdbOff}
+          onChange={(e) => void setLogo(e.target.value)}
+          className="max-w-[16rem]"
+        >
+          <option value="none">None</option>
+          <option value="auto">Auto — detect the collection’s service</option>
+          {providers?.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {tmdbOff
+          ? "Add a TMDb API key in Settings to stamp real streaming-service logos."
+          : current === "auto"
+            ? `Stamps the real logo of the service most of these titles are on${
+                state?.providerName ? ` (currently ${state.providerName})` : ""
+              }. Kept on through MediUX re-syncs.`
+            : "Stamps a real, colored streaming-service logo on the poster — and keeps it there through MediUX re-syncs."}
+      </p>
+      {error && <p className="text-[11px] text-destructive">{error}</p>}
+    </div>
+  );
+}
+
 function GeneratePosterDialog({
   open,
   onClose,
@@ -888,7 +980,6 @@ function GeneratePosterDialog({
   const [title, setTitle] = React.useState(defaultTitle);
   const [style, setStyle] = React.useState<Style>("backdrop");
   const [source, setSource] = React.useState<string>("auto");
-  const [logo, setLogo] = React.useState<string>("none");
   const [src, setSrc] = React.useState<string | null>(null);
   const [loading, setLoading] = React.useState(false);
   const [applying, setApplying] = React.useState(false);
@@ -900,15 +991,8 @@ function GeneratePosterDialog({
     enabled: open,
   });
 
-  const { data: logoList } = useQuery({
-    queryKey: ["overlay-logos"],
-    queryFn: () => api<LogoOption[]>("/api/overlays/logos"),
-    staleTime: Infinity,
-    enabled: open,
-  });
-
   const generate = React.useCallback(
-    async (p: { title: string; style: Style; source: string; logo: string }) => {
+    async (p: { title: string; style: Style; source: string }) => {
       setLoading(true);
       setError(null);
       try {
@@ -941,8 +1025,7 @@ function GeneratePosterDialog({
       setTitle(defaultTitle);
       setStyle("backdrop");
       setSource("auto");
-      setLogo("none");
-      void generate({ title: defaultTitle, style: "backdrop", source: "auto", logo: "none" });
+      void generate({ title: defaultTitle, style: "backdrop", source: "auto" });
     } else {
       setSrc((old) => {
         if (old) URL.revokeObjectURL(old);
@@ -953,16 +1036,12 @@ function GeneratePosterDialog({
 
   const pickStyle = (s: Style) => {
     setStyle(s);
-    void generate({ title, style: s, source, logo });
+    void generate({ title, style: s, source });
   };
   const pickSource = (s: string) => {
     setSource(s);
     setStyle("backdrop");
-    void generate({ title, style: "backdrop", source: s, logo });
-  };
-  const pickLogo = (l: string) => {
-    setLogo(l);
-    void generate({ title, style, source, logo: l });
+    void generate({ title, style: "backdrop", source: s });
   };
   const shuffle = () => {
     const members = sources?.members ?? [];
@@ -977,7 +1056,7 @@ function GeneratePosterDialog({
       const res = await fetch(`/api/collections/${ratingKey}/poster/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title, style, source, logo }),
+        body: JSON.stringify({ title, style, source }),
       });
       if (!res.ok) {
         const b = (await res.json().catch(() => ({}))) as { error?: string };
@@ -1018,25 +1097,6 @@ function GeneratePosterDialog({
                 <Images className="mr-1 inline h-3 w-3" /> Collage
               </button>
             </div>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label className="text-xs">Streaming logo</Label>
-            <NativeSelect value={logo} onChange={(e) => pickLogo(e.target.value)} className="max-w-[15rem]">
-              <option value="none">None</option>
-              <option value="auto">Auto — detect the collection’s service</option>
-              {logoList?.map((l) => (
-                <option key={l.slug} value={l.slug}>
-                  {l.title}
-                </option>
-              ))}
-            </NativeSelect>
-            {logo === "auto" && (
-              <p className="text-[11px] text-muted-foreground">
-                Detects the service most of these titles are on (via TMDb; US region). Logos are
-                from the CC0 Simple Icons set.
-              </p>
-            )}
           </div>
 
           {style === "backdrop" && (
@@ -1109,7 +1169,7 @@ function GeneratePosterDialog({
             <Button
               variant="outline"
               loading={loading}
-              onClick={() => void generate({ title, style, source, logo })}
+              onClick={() => void generate({ title, style, source })}
             >
               Regenerate
             </Button>

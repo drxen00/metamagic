@@ -3,12 +3,10 @@ import {
   applyOverlaySchema,
   overlayPresetInputSchema,
   type BadgeBox,
-  type LogoOption,
   type OverlayPreset,
   type OverlayStatus,
 } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
-import { listLogos } from "./logos.js";
 import {
   countOriginalArtwork,
   createOverlayPreset,
@@ -26,9 +24,6 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
   // ---------- Presets ----------
 
   app.get("/api/overlays/presets", async (): Promise<OverlayPreset[]> => listOverlayPresets());
-
-  /** Brand logos available to "logo" badges (CC0 Simple Icons pack). */
-  app.get("/api/overlays/logos", async (): Promise<LogoOption[]> => listLogos());
 
   app.post("/api/overlays/presets", async (req): Promise<OverlayPreset> => {
     const input = overlayPresetInputSchema.parse(req.body);
@@ -98,7 +93,12 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
     const client = requirePlex();
     const sectionId = req.query.sectionId ?? (await client.sections())[0]?.id;
     if (!sectionId) return reply.status(404).send({ error: "No libraries found" });
-    const page = await client.sectionItems(sectionId, { offset: 0, limit: 1, sort: "addedAt:desc" });
+    const page = await client.sectionItems(sectionId, {
+      offset: 0,
+      limit: 1,
+      sort: "addedAt:desc",
+      excludeCollections: true,
+    });
     const item = page.items[0];
     if (!item) return reply.status(404).send({ error: "That library is empty" });
     return client.item(item.ratingKey);

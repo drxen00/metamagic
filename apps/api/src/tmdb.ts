@@ -1,4 +1,4 @@
-import type { ArtworkOption } from "@metamagic/shared";
+import type { ArtworkOption, ProviderOption } from "@metamagic/shared";
 import {
   cacheMovieCollection,
   cacheProviders,
@@ -11,6 +11,8 @@ const TMDB_API = "https://api.themoviedb.org/3";
 const IMG_PREVIEW = "https://image.tmdb.org/t/p/w342";
 const IMG_FULL = "https://image.tmdb.org/t/p/original";
 const IMG_LOGO = "https://image.tmdb.org/t/p/w92";
+/** Streaming-provider logos are small; w185 is crisp enough to stamp on a poster. */
+const IMG_PROVIDER_LOGO = "https://image.tmdb.org/t/p/w185";
 
 export class TmdbError extends Error {
   constructor(
@@ -346,24 +348,92 @@ export async function tmdbCollectionBackdropUrl(collectionId: number): Promise<s
   return data.backdrop_path ? `${IMG_FULL}${data.backdrop_path}` : undefined;
 }
 
+/** A streaming provider on TMDb (JustWatch-sourced), with its real colored logo. */
+export interface WatchProvider {
+  id: number;
+  name: string;
+  /** TMDb logo path, e.g. "/xxxx.jpg"; null when TMDb has no logo on file. */
+  logoPath: string | null;
+}
+
+/** Full URL to a TMDb provider logo, for the picker / to download and stamp. */
+export function providerLogoUrl(logoPath: string | null | undefined, full = false): string | undefined {
+  if (!logoPath) return undefined;
+  return `${full ? IMG_PROVIDER_LOGO : IMG_LOGO}${logoPath}`;
+}
+
 /**
  * The subscription (flatrate) streaming providers a title is on in a region,
- * e.g. ["Netflix", "Max"]. Cached per title+region. Powers auto logo overlays.
+ * with each provider's colored logo. Cached per title+region. Powers auto logos.
  */
 export async function tmdbWatchProviders(
   tmdbId: string,
   mediaType: "movie" | "tv",
   region = "US",
-): Promise<string[]> {
-  const key = `${mediaType}:${tmdbId}:${region}`;
-  const cached = getCachedProviders(key);
+): Promise<WatchProvider[]> {
+  const key = `v2:${mediaType}:${tmdbId}:${region}`;
+  const cached = getCachedProviders<WatchProvider>(key);
   if (cached) return cached;
   const data = await tmdbFetch<{
-    results?: Record<string, { flatrate?: { provider_name: string }[] }>;
+    results?: Record<string, { flatrate?: { provider_id: number; provider_name: string; logo_path?: string | null }[] }>;
   }>(`/${mediaType}/${tmdbId}/watch/providers`);
-  const names = (data.results?.[region]?.flatrate ?? []).map((p) => p.provider_name);
-  cacheProviders(key, names);
-  return names;
+  const providers: WatchProvider[] = (data.results?.[region]?.flatrate ?? []).map((p) => ({
+    id: p.provider_id,
+    name: p.provider_name,
+    logoPath: p.logo_path ?? null,
+  }));
+  cacheProviders(key, providers);
+  return providers;
+}
+
+/**
+ * Every streaming provider TMDb knows about in a region (id, name, logo path),
+ * sorted by TMDb's display priority. Cached. The raw form keeps `logoPath` so a
+ * chosen provider can be resolved to its logo for stamping.
+ */
+export async function rawWatchProviders(region = "US"): Promise<WatchProvider[]> {
+  const key = `providers-list:${region}`;
+  const cached = getCachedProviders<WatchProvider>(key);
+  if (cached) return cached;
+  const data = await tmdbFetch<{
+    results?: {
+      provider_id: number;
+      provider_name: string;
+      logo_path?: string | null;
+      display_priority?: number;
+    }[];
+  }>(`/watch/providers/movie?watch_region=${encodeURIComponent(region)}`);
+  const providers: WatchProvider[] = (data.results ?? [])
+    .filter((p) => p.logo_path)
+    .sort((a, b) => (a.display_priority ?? 999) - (b.display_priority ?? 999))
+    .map((p) => ({ id: p.provider_id, name: p.provider_name, logoPath: p.logo_path ?? null }));
+  cacheProviders(key, providers);
+  return providers;
+}
+
+/** The region's providers mapped for the picker (name + colored logo URL). */
+export async function listWatchProviders(region = "US"): Promise<ProviderOption[]> {
+  return (await rawWatchProviders(region)).map((p) => ({
+    id: String(p.id),
+    name: p.name,
+    logoUrl: providerLogoUrl(p.logoPath)!,
+  }));
+}
+
+/** Look up one provider (by TMDb id) in a region, for its name + logo path. */
+export async function watchProviderById(
+  providerId: string,
+  region = "US",
+): Promise<WatchProvider | undefined> {
+  return (await rawWatchProviders(region)).find((p) => String(p.id) === providerId);
+}
+
+/** Download a provider's colored logo (for stamping). Full-res variant. */
+export async function fetchProviderLogo(logoPath: string): Promise<Buffer> {
+  const url = providerLogoUrl(logoPath, true)!;
+  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new TmdbError(`Couldn't download the provider logo (${res.status}).`, 502);
+  return Buffer.from(await res.arrayBuffer());
 }
 
 /** All movies belonging to a TMDb collection. */
