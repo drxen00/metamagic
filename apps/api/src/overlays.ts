@@ -12,6 +12,15 @@ import {
   recordOriginalArtwork,
 } from "./db.js";
 import type { ProgressReporter } from "./mediux.js";
+import {
+  fetchProviderLogo,
+  providerLogoUrl,
+  rawWatchProviders,
+  tmdbConfigured,
+  tmdbWatchProviders,
+  watchRegion,
+  type WatchProvider,
+} from "./tmdb.js";
 
 const ORIGINALS_DIR = path.join(CONFIG_DIR, "originals");
 fs.mkdirSync(ORIGINALS_DIR, { recursive: true });
@@ -63,8 +72,56 @@ function newLabel(item: MediaItem, badge: Badge): string | undefined {
   return ageDays <= days ? "NEW" : undefined;
 }
 
+// ---------- Streaming service (auto-detected per title) ----------
+
+/** Per-item data resolved ahead of rendering (anything needing network I/O). */
+export interface OverlayContext {
+  /** The title's streaming service and its real colored logo, if it's on one. */
+  streaming?: { name: string; logoPath: string; image: Buffer };
+}
+
+/**
+ * Resolve a title's streaming service via TMDb watch-providers (subscription
+ * services, in TMDb's display-priority order — the first is the badge). In
+ * preview mode a title on no service falls back to the region's top service so
+ * the badge stays visible and draggable; real applies just skip that title.
+ */
+async function resolveStreaming(
+  item: MediaItem,
+  preview: boolean,
+): Promise<OverlayContext["streaming"]> {
+  if (!tmdbConfigured()) return undefined;
+  const region = watchRegion();
+  let provider: WatchProvider | undefined;
+  if (item.tmdbId && (item.type === "movie" || item.type === "show")) {
+    const mediaType = item.type === "show" ? "tv" : "movie";
+    const providers = await tmdbWatchProviders(item.tmdbId, mediaType, region).catch(() => []);
+    provider = providers.find((p) => p.logoPath);
+  }
+  if (!provider && preview) {
+    provider = (await rawWatchProviders(region).catch(() => []))[0];
+  }
+  if (!provider?.logoPath) return undefined;
+  const image = await fetchProviderLogo(provider.logoPath).catch(() => undefined);
+  return image ? { name: provider.name, logoPath: provider.logoPath, image } : undefined;
+}
+
+/** Resolve what a preset needs for this item before compositing. */
+export async function overlayContext(
+  preset: OverlayPreset,
+  item: MediaItem,
+  preview = false,
+): Promise<OverlayContext> {
+  if (!preset.badges.some((b) => b.type === "streaming")) return {};
+  return { streaming: await resolveStreaming(item, preview) };
+}
+
 /** The text a badge shows for this item, or undefined when it doesn't apply. */
-export function badgeLabel(badge: Badge, item: MediaItem): string | undefined {
+export function badgeLabel(
+  badge: Badge,
+  item: MediaItem,
+  ctx: OverlayContext = {},
+): string | undefined {
   switch (badge.type) {
     case "resolution":
       return resolutionLabel(item);
@@ -78,6 +135,8 @@ export function badgeLabel(badge: Badge, item: MediaItem): string | undefined {
       return newLabel(item, badge);
     case "text":
       return badge.value?.trim() || undefined;
+    case "streaming":
+      return ctx.streaming?.name;
   }
 }
 
@@ -102,12 +161,20 @@ function sampleLabel(badge: Badge): string {
       return "NEW";
     case "text":
       return badge.value?.trim() || "TEXT";
+    case "streaming":
+      // Only reached when no logo could be resolved (e.g. no TMDb key).
+      return "STREAMING";
   }
 }
 
 /** Real label, or (in preview mode) a sample so the badge is still shown. */
-function labelFor(badge: Badge, item: MediaItem, preview: boolean): string | undefined {
-  return badgeLabel(badge, item) ?? (preview ? sampleLabel(badge) : undefined);
+function labelFor(
+  badge: Badge,
+  item: MediaItem,
+  preview: boolean,
+  ctx: OverlayContext,
+): string | undefined {
+  return badgeLabel(badge, item, ctx) ?? (preview ? sampleLabel(badge) : undefined);
 }
 
 // ---------- SVG badge rendering ----------
@@ -119,10 +186,38 @@ function escapeXml(s: string): string {
 }
 
 interface RenderedBadge {
-  svg: Buffer;
+  /** Ready-to-composite SVG for text badges. */
+  svg?: Buffer;
+  /** Raw logo image for logo badges — rounded and sized at composite time. */
+  logo?: Buffer;
   width: number;
   height: number;
   position: BadgePosition;
+}
+
+/**
+ * A streaming-service badge: the service's real logo as a rounded square tile,
+ * sized like the text badges (≈1.6× their height so the mark stays legible).
+ * The tile *is* the logo — no pill or text around it, so it always fits its box.
+ */
+function renderLogoBadge(badge: Badge, logo: Buffer): RenderedBadge {
+  const size = Math.round(128 * (badge.scale ?? 1));
+  return { logo, width: size, height: size, position: badge.position ?? "bottom-right" };
+}
+
+/** Crop a logo to a size×size rounded square (PNG with transparent corners). */
+async function logoTile(logo: Buffer, size: number): Promise<Buffer> {
+  const radius = Math.round(size * 0.22);
+  const mask = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
+      `<rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="#fff"/></svg>`,
+  );
+  return sharp(logo)
+    .resize(size, size, { fit: "cover" })
+    .ensureAlpha()
+    .composite([{ input: mask, blend: "dest-in" }])
+    .png()
+    .toBuffer();
 }
 
 function renderBadge(badge: Badge, label: string): RenderedBadge {
@@ -193,13 +288,21 @@ interface PlacedBadge {
 }
 
 /** Resolve every applicable badge to a concrete pixel box on the 1000×1500 canvas. */
-function placeBadges(preset: OverlayPreset, item: MediaItem, preview = false): PlacedBadge[] {
+function placeBadges(
+  preset: OverlayPreset,
+  item: MediaItem,
+  preview: boolean,
+  ctx: OverlayContext,
+): PlacedBadge[] {
   const perPosition = new Map<BadgePosition, number>();
   const placed: PlacedBadge[] = [];
   preset.badges.forEach((badge, index) => {
-    const label = labelFor(badge, item, preview);
+    const label = labelFor(badge, item, preview, ctx);
     if (!label) return;
-    const rendered = renderBadge(badge, label);
+    const rendered =
+      badge.type === "streaming" && ctx.streaming
+        ? renderLogoBadge(badge, ctx.streaming.image)
+        : renderBadge(badge, label);
     // A dragged badge carries free (x, y) coords that override the preset corner.
     const pos =
       typeof badge.x === "number" && typeof badge.y === "number"
@@ -214,10 +317,16 @@ function placeBadges(preset: OverlayPreset, item: MediaItem, preview = false): P
   return placed;
 }
 
-export function badgeLayout(preset: OverlayPreset, item: MediaItem, preview = false): BadgeBox[] {
-  return placeBadges(preset, item, preview).map((p) => ({
+export async function badgeLayout(
+  preset: OverlayPreset,
+  item: MediaItem,
+  preview = false,
+): Promise<BadgeBox[]> {
+  const ctx = await overlayContext(preset, item, preview);
+  return placeBadges(preset, item, preview, ctx).map((p) => ({
     index: p.index,
     label: p.label,
+    imageUrl: p.rendered.logo ? providerLogoUrl(ctx.streaming?.logoPath) : undefined,
     x: p.left / POSTER_WIDTH,
     y: p.top / POSTER_HEIGHT,
     w: p.rendered.width / POSTER_WIDTH,
@@ -225,19 +334,26 @@ export function badgeLayout(preset: OverlayPreset, item: MediaItem, preview = fa
   }));
 }
 
-/** Composite a preset's badges onto poster bytes. Pure — no Plex, no disk. */
+/**
+ * Composite a preset's badges onto poster bytes. No Plex or disk access; pass a
+ * pre-resolved `ctx` to skip the TMDb lookup (it's resolved here otherwise).
+ */
 export async function compositePoster(
   original: Buffer,
   preset: OverlayPreset,
   item: MediaItem,
   preview = false,
+  ctx?: OverlayContext,
 ): Promise<Buffer> {
+  const resolved = ctx ?? (await overlayContext(preset, item, preview));
   const base = sharp(original).resize(POSTER_WIDTH, POSTER_HEIGHT, { fit: "cover" });
-  const layers: OverlayOptions[] = placeBadges(preset, item, preview).map((p) => ({
-    input: p.rendered.svg,
-    left: p.left,
-    top: p.top,
-  }));
+  const layers: OverlayOptions[] = await Promise.all(
+    placeBadges(preset, item, preview, resolved).map(async (p) => ({
+      input: p.rendered.logo ? await logoTile(p.rendered.logo, p.rendered.width) : p.rendered.svg,
+      left: p.left,
+      top: p.top,
+    })),
+  );
   return base.composite(layers).jpeg({ quality: 92 }).toBuffer();
 }
 
@@ -330,11 +446,12 @@ export async function applyOverlayToItem(
 ): Promise<"applied" | "skipped"> {
   // Per-item metadata: needed for HDR/DV, which section listings omit.
   const item = await client.item(ratingKey);
-  const applicable = preset.badges.some((b) => badgeLabel(b, item));
+  const ctx = await overlayContext(preset, item);
+  const applicable = preset.badges.some((b) => badgeLabel(b, item, ctx));
   if (!applicable) return "skipped";
 
   const { buffer } = await loadOriginalPoster(client, item);
-  const composed = await compositePoster(buffer, preset, item);
+  const composed = await compositePoster(buffer, preset, item, false, ctx);
   await client.uploadArtwork(ratingKey, "poster", composed, "image/jpeg");
   if (item.librarySectionId) {
     await client.lockArtwork(

@@ -90,52 +90,6 @@ function overlaySvg(title: string, accent: string): Buffer {
 export interface PosterOptions {
   /** Accent bar color; defaults to the MetaMagic purple. */
   accent?: string;
-  /** Optional real streaming-service logo (PNG/JPG bytes) stamped top-right. */
-  logo?: Buffer;
-}
-
-/**
- * A real streaming-service logo on a rounded white plate, for a poster corner.
- * The plate guarantees contrast for logos with transparent or dark artwork and
- * gives the badge a clean "app icon" look. `size` is the plate's square side.
- */
-export async function buildLogoBadge(logoImage: Buffer, size: number): Promise<Buffer> {
-  const pad = Math.round(size * 0.16);
-  const inner = size - pad * 2;
-  const radius = Math.round(size * 0.22);
-  // Fit the logo inside the plate, preserving aspect, on transparent bg.
-  const logo = await sharp(logoImage)
-    .resize(inner, inner, { fit: "inside", withoutEnlargement: false, background: { r: 0, g: 0, b: 0, alpha: 0 } })
-    .png()
-    .toBuffer();
-  const meta = await sharp(logo).metadata();
-  const lw = meta.width ?? inner;
-  const lh = meta.height ?? inner;
-  const plate = Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}">` +
-      `<rect width="${size}" height="${size}" rx="${radius}" ry="${radius}" fill="#ffffff"/></svg>`,
-  );
-  return sharp(plate)
-    .composite([{ input: logo, left: Math.round((size - lw) / 2), top: Math.round((size - lh) / 2) }])
-    .png()
-    .toBuffer();
-}
-
-/**
- * Stamp a streaming-service logo onto an existing poster (any size), top-right.
- * Used both by the generator and by the persistent per-collection logo so a
- * MediUX-synced poster can carry a logo too. Re-encodes to JPEG.
- */
-export async function stampLogoOnPoster(poster: Buffer, logoImage: Buffer): Promise<Buffer> {
-  const meta = await sharp(poster).metadata();
-  const width = meta.width ?? W;
-  const badgeSize = Math.max(96, Math.round(width * 0.24));
-  const margin = Math.round(width * 0.035);
-  const badge = await buildLogoBadge(logoImage, badgeSize);
-  return sharp(poster)
-    .composite([{ input: badge, top: margin, left: width - margin - badgeSize }])
-    .jpeg({ quality: 90 })
-    .toBuffer();
 }
 
 /** Compose a collection poster from source image bytes + a title. */
@@ -149,12 +103,6 @@ export async function generatePoster(
     .resize(W, H, { fit: "cover", position: "attention" })
     .modulate({ brightness: 0.92 });
   const layers: OverlayOptions[] = [{ input: overlaySvg(title, accent), top: 0, left: 0 }];
-  if (options.logo) {
-    const badgeSize = 230;
-    const margin = 40;
-    const badge = await buildLogoBadge(options.logo, badgeSize);
-    layers.push({ input: badge, top: margin, left: W - margin - badgeSize });
-  }
   return base.composite(layers).jpeg({ quality: 90 }).toBuffer();
 }
 

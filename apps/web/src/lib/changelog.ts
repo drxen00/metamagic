@@ -13,6 +13,18 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.31.0",
+    title: "Streaming logos are an overlay now",
+    date: "2026-10-08",
+    added: [
+      "New “Streaming service” overlay badge: every title gets the real, full-color logo of the streaming service it’s on (Netflix, Disney+, Max, Prime Video, Hulu, Apple TV+…), detected automatically via TMDb — so one preset badges your whole library. Titles that aren’t on a subscription service are skipped.",
+      "The live preview’s drag handle shows the actual logo, and the logo always fits its box; use the size slider to scale it.",
+    ],
+    fixed: [
+      "Removed the streaming-logo dropdown from collections. Any collection that had a logo stamped on its poster gets its clean poster back automatically after this update.",
+    ],
+  },
+  {
     version: "0.30.0",
     title: "Real streaming logos, on any collection",
     date: "2026-10-01",

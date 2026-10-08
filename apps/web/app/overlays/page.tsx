@@ -42,6 +42,7 @@ const BADGE_TYPES: { id: BadgeType; label: string; hint: string }[] = [
   { id: "rating", label: "Rating", hint: "★ audience score" },
   { id: "new", label: "New", hint: "recently added" },
   { id: "text", label: "Custom text", hint: "your own label" },
+  { id: "streaming", label: "Streaming service", hint: "the real logo of the service it’s on" },
 ];
 
 const POSITIONS: { id: BadgePosition; label: string }[] = [
@@ -58,7 +59,7 @@ const PRESET_COLORS = ["#111827", "#1d4ed8", "#7c3aed", "#b45309", "#16a34a", "#
 function newBadge(type: BadgeType): BadgeSpec {
   return {
     type,
-    position: type === "rating" ? "bottom-right" : "top-left",
+    position: type === "rating" ? "bottom-right" : type === "streaming" ? "top-right" : "top-left",
     scale: 1,
     color: "#111827",
     value: type === "text" ? "REMUX" : type === "new" ? "30" : undefined,
@@ -162,12 +163,26 @@ function DraggableBadges({
               top: `${pos.y * 100}%`,
               width: `${box.w * 100}%`,
               height: `${box.h * 100}%`,
-              backgroundColor: colors[box.index] ?? "#111827",
+              backgroundColor: box.imageUrl ? "transparent" : (colors[box.index] ?? "#111827"),
               fontSize: `${Math.max(7, Math.min(22, box.h * layerHeight * 0.5))}px`,
             }}
-            className="pointer-events-auto absolute flex cursor-grab touch-none select-none items-center justify-center rounded-md text-center font-bold uppercase leading-none text-white opacity-90 shadow-lg ring-2 ring-white/70 active:cursor-grabbing"
+            className={cn(
+              "pointer-events-auto absolute flex cursor-grab touch-none select-none items-center justify-center overflow-hidden text-center font-bold uppercase leading-none text-white opacity-90 shadow-lg ring-2 ring-white/70 active:cursor-grabbing",
+              box.imageUrl ? "rounded-[22%]" : "rounded-md",
+            )}
           >
-            {box.label}
+            {box.imageUrl ? (
+              // The real service logo, so the handle looks exactly like the badge.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={box.imageUrl}
+                alt={box.label}
+                draggable={false}
+                className="pointer-events-none h-full w-full object-cover"
+              />
+            ) : (
+              box.label
+            )}
           </button>
         );
       })}
@@ -472,6 +487,14 @@ export default function OverlaysPage() {
                       </div>
                     </div>
 
+                    {badge.type === "streaming" && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Each title gets the real logo of the streaming service it’s on (detected
+                        via TMDb, US region) — titles on no subscription service are skipped.
+                        Needs a TMDb API key in Settings.
+                      </p>
+                    )}
+
                     {(badge.type === "text" || badge.type === "new") && (
                       <div className="space-y-1.5">
                         <Label className="text-xs">
@@ -485,6 +508,7 @@ export default function OverlaysPage() {
                       </div>
                     )}
 
+                    {badge.type !== "streaming" && (
                     <div className="space-y-1.5">
                       <Label className="text-xs">Color</Label>
                       <div className="flex flex-wrap items-center gap-1.5">
@@ -508,6 +532,7 @@ export default function OverlaysPage() {
                         />
                       </div>
                     </div>
+                    )}
                   </div>
                 ))}
               </div>

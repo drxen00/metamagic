@@ -1,4 +1,4 @@
-import type { ArtworkOption, ProviderOption } from "@metamagic/shared";
+import type { ArtworkOption } from "@metamagic/shared";
 import {
   cacheMovieCollection,
   cacheProviders,
@@ -11,8 +11,8 @@ const TMDB_API = "https://api.themoviedb.org/3";
 const IMG_PREVIEW = "https://image.tmdb.org/t/p/w342";
 const IMG_FULL = "https://image.tmdb.org/t/p/original";
 const IMG_LOGO = "https://image.tmdb.org/t/p/w92";
-/** Streaming-provider logos are small; w185 is crisp enough to stamp on a poster. */
-const IMG_PROVIDER_LOGO = "https://image.tmdb.org/t/p/w185";
+/** Streaming-provider logo size downloaded for overlay badges (crisp up to 2× scale). */
+const IMG_PROVIDER_LOGO = "https://image.tmdb.org/t/p/w300";
 
 export class TmdbError extends Error {
   constructor(
@@ -363,8 +363,9 @@ export function providerLogoUrl(logoPath: string | null | undefined, full = fals
 }
 
 /**
- * The subscription (flatrate) streaming providers a title is on in a region,
- * with each provider's colored logo. Cached per title+region. Powers auto logos.
+ * The subscription (flatrate) streaming providers a title is on in a region, in
+ * TMDb's display-priority order, each with its colored logo. Cached per
+ * title+region. Powers the streaming-service overlay badge.
  */
 export async function tmdbWatchProviders(
   tmdbId: string,
@@ -388,8 +389,8 @@ export async function tmdbWatchProviders(
 
 /**
  * Every streaming provider TMDb knows about in a region (id, name, logo path),
- * sorted by TMDb's display priority. Cached. The raw form keeps `logoPath` so a
- * chosen provider can be resolved to its logo for stamping.
+ * sorted by TMDb's display priority. Cached. Used for the overlay preview's
+ * sample logo when the previewed title isn't on any service.
  */
 export async function rawWatchProviders(region = "US"): Promise<WatchProvider[]> {
   const key = `providers-list:${region}`;
@@ -411,29 +412,29 @@ export async function rawWatchProviders(region = "US"): Promise<WatchProvider[]>
   return providers;
 }
 
-/** The region's providers mapped for the picker (name + colored logo URL). */
-export async function listWatchProviders(region = "US"): Promise<ProviderOption[]> {
-  return (await rawWatchProviders(region)).map((p) => ({
-    id: String(p.id),
-    name: p.name,
-    logoUrl: providerLogoUrl(p.logoPath)!,
-  }));
+/** Watch-provider region (TMDb/JustWatch country code); defaults to US. */
+export function watchRegion(): string {
+  return getAppSetting("watch_region") || "US";
 }
 
-/** Look up one provider (by TMDb id) in a region, for its name + logo path. */
-export async function watchProviderById(
-  providerId: string,
-  region = "US",
-): Promise<WatchProvider | undefined> {
-  return (await rawWatchProviders(region)).find((p) => String(p.id) === providerId);
-}
+/** Downloaded provider logos, keyed by logo path — a library-wide overlay apply
+ *  stamps the same handful of logos thousands of times. */
+const providerLogoCache = new Map<string, Promise<Buffer>>();
 
-/** Download a provider's colored logo (for stamping). Full-res variant. */
-export async function fetchProviderLogo(logoPath: string): Promise<Buffer> {
-  const url = providerLogoUrl(logoPath, true)!;
-  const res = await fetch(url, { signal: AbortSignal.timeout(15_000) });
-  if (!res.ok) throw new TmdbError(`Couldn't download the provider logo (${res.status}).`, 502);
-  return Buffer.from(await res.arrayBuffer());
+/** Download a provider's colored logo (for stamping). Cached in memory. */
+export function fetchProviderLogo(logoPath: string): Promise<Buffer> {
+  let hit = providerLogoCache.get(logoPath);
+  if (!hit) {
+    hit = (async () => {
+      const res = await fetch(providerLogoUrl(logoPath, true)!, { signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) throw new TmdbError(`Couldn't download the provider logo (${res.status}).`, 502);
+      return Buffer.from(await res.arrayBuffer());
+    })();
+    // Don't cache failures — the next title gets a fresh attempt.
+    hit.catch(() => providerLogoCache.delete(logoPath));
+    providerLogoCache.set(logoPath, hit);
+  }
+  return hit;
 }
 
 /** All movies belonging to a TMDb collection. */

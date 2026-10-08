@@ -6,6 +6,7 @@ import { runRule } from "./rules.js";
 import { runMediuxAutoSync } from "./mediux-sync.js";
 import { runAutoRequest, runPresetAutomations } from "./automations.js";
 import { runWatcherTick } from "./watcher.js";
+import { restoreStampedCollectionLogos } from "./collection-logo.js";
 
 const TICK_MS = 15 * 60 * 1000;
 /** Fast change-watcher tick — reacts to new content within ~a minute. */
@@ -49,6 +50,9 @@ export function startScheduler(log: FastifyBaseLogger): void {
         log.error({ err, ruleId: rule.id }, "scheduled rule threw");
       }
     }
+
+    // Retry the one-time collection-logo cleanup if Plex was down at startup.
+    await restoreStampedCollectionLogos(client, log).catch(() => undefined);
 
     // MediUX auto-sync: re-style collections/shows whose content changed.
     try {
@@ -115,6 +119,17 @@ export function startScheduler(log: FastifyBaseLogger): void {
     void watchTick();
     setInterval(() => void watchTick(), WATCH_TICK_MS);
   }, 20_000).unref?.();
+
+  // One-time cleanup: restore collection posters that still carry a streaming
+  // logo from the retired per-collection logo feature (no-op once done).
+  setTimeout(() => {
+    const client = plexClient();
+    if (client) {
+      void restoreStampedCollectionLogos(client, log).catch((err) =>
+        log.error({ err }, "collection logo cleanup threw"),
+      );
+    }
+  }, 25_000).unref?.();
 
   log.info("automation scheduler started (15 min tick + 60s change-watcher)");
 }
