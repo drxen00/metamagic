@@ -7,7 +7,6 @@ import { Check, Download, ExternalLink, Images, Pencil, Plus, Search, Shuffle, S
 import type {
   ArrSettings,
   CollectionCompleteness,
-  CollectionLogoState,
   EditCollectionInput,
   LibrarySection,
   MediaItem,
@@ -15,7 +14,6 @@ import type {
   PagedResult,
   PlexCollection,
   PosterSources,
-  ProviderOption,
   TmdbCollectionOption,
 } from "@metamagic/shared";
 import { api } from "@/lib/api";
@@ -25,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog } from "@/components/ui/dialog";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Input, Label, NativeSelect } from "@/components/ui/input";
+import { Input, Label } from "@/components/ui/input";
 import { Sheet } from "@/components/ui/sheet";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ItemDrawer } from "@/components/library/item-drawer";
@@ -397,8 +395,6 @@ export default function CollectionsPage() {
             </div>
 
             <ProvenanceNote ratingKey={open.ratingKey} />
-
-            <StreamingLogoControl ratingKey={open.ratingKey} onChanged={invalidate} />
 
             {editing ? (
               <div className="space-y-1.5">
@@ -871,95 +867,6 @@ function LinkCollectionDialog({
         )}
       </div>
     </Dialog>
-  );
-}
-
-/**
- * Persistent streaming-logo stamp for a collection. Works on whatever poster the
- * collection currently has — generated, uploaded, or MediUX-synced — and the
- * backend re-stamps it after MediUX re-syncs, so it isn't limited to generated
- * posters. Uses real, colored TMDb provider logos.
- */
-function StreamingLogoControl({
-  ratingKey,
-  onChanged,
-}: {
-  ratingKey: string;
-  onChanged: () => void;
-}) {
-  const qc = useQueryClient();
-  const [saving, setSaving] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-
-  const { data: state } = useQuery({
-    queryKey: ["collection-logo", ratingKey],
-    queryFn: () => api<CollectionLogoState>(`/api/collections/${ratingKey}/logo`),
-  });
-  const { data: providers } = useQuery({
-    queryKey: ["logo-providers"],
-    queryFn: () => api<ProviderOption[]>("/api/logos/providers"),
-    staleTime: Infinity,
-  });
-
-  const current = state?.provider ?? "none";
-  const selectedProvider = providers?.find((p) => p.id === current);
-  const tmdbOff = providers !== undefined && providers.length === 0;
-
-  const setLogo = async (provider: string) => {
-    setSaving(true);
-    setError(null);
-    try {
-      await api(`/api/collections/${ratingKey}/logo`, {
-        method: "PUT",
-        body: JSON.stringify({ provider }),
-      });
-      await qc.invalidateQueries({ queryKey: ["collection-logo", ratingKey] });
-      onChanged();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  return (
-    <div className="space-y-1.5">
-      <Label className="text-xs">Streaming logo</Label>
-      <div className="flex items-center gap-2">
-        {selectedProvider && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={selectedProvider.logoUrl}
-            alt=""
-            className="h-7 w-7 shrink-0 rounded bg-white object-contain p-0.5"
-          />
-        )}
-        <NativeSelect
-          value={current}
-          disabled={saving || tmdbOff}
-          onChange={(e) => void setLogo(e.target.value)}
-          className="max-w-[16rem]"
-        >
-          <option value="none">None</option>
-          <option value="auto">Auto — detect the collection’s service</option>
-          {providers?.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </NativeSelect>
-      </div>
-      <p className="text-[11px] text-muted-foreground">
-        {tmdbOff
-          ? "Add a TMDb API key in Settings to stamp real streaming-service logos."
-          : current === "auto"
-            ? `Stamps the real logo of the service most of these titles are on${
-                state?.providerName ? ` (currently ${state.providerName})` : ""
-              }. Kept on through MediUX re-syncs.`
-            : "Stamps a real, colored streaming-service logo on the poster — and keeps it there through MediUX re-syncs."}
-      </p>
-      {error && <p className="text-[11px] text-destructive">{error}</p>}
-    </div>
   );
 }
 

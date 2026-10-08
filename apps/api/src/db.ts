@@ -114,9 +114,9 @@ db.exec(`
     saved_at INTEGER NOT NULL
   );
 
-  /* Persistent streaming-logo stamp on a collection's poster. provider is a
-     TMDb provider id or "auto". base_file is the clean (pre-logo) poster backup,
-     so the logo can be re-stamped (after a MediUX re-sync) or removed cleanly. */
+  /* Retired (0.30.0): collections that had a streaming logo stamped on their
+     poster. Kept only so the one-time cleanup can restore the clean poster
+     (base_file) — see collection-logo.ts. */
   CREATE TABLE IF NOT EXISTS collection_logos (
     rating_key TEXT PRIMARY KEY,
     provider TEXT NOT NULL,
@@ -703,40 +703,12 @@ function toCollectionLogoRow(r: {
 const COLLECTION_LOGO_COLS =
   "rating_key, provider, region, base_file, base_content_type, stamped_hash";
 
-export function getCollectionLogo(ratingKey: string): CollectionLogoRow | undefined {
-  const row = db
-    .prepare(`SELECT ${COLLECTION_LOGO_COLS} FROM collection_logos WHERE rating_key = ?`)
-    .get(ratingKey) as Parameters<typeof toCollectionLogoRow>[0] | undefined;
-  return row ? toCollectionLogoRow(row) : undefined;
-}
-
 export function listCollectionLogos(): CollectionLogoRow[] {
   return (
     db.prepare(`SELECT ${COLLECTION_LOGO_COLS} FROM collection_logos`).all() as Parameters<
       typeof toCollectionLogoRow
     >[0][]
   ).map(toCollectionLogoRow);
-}
-
-export function upsertCollectionLogo(input: {
-  ratingKey: string;
-  provider: string;
-  region: string;
-  baseFile: string | null;
-  baseContentType: string | null;
-  stampedHash: string | null;
-}): void {
-  db.prepare(
-    `INSERT INTO collection_logos (rating_key, provider, region, base_file, base_content_type, stamped_hash, updated_at)
-     VALUES (@ratingKey, @provider, @region, @baseFile, @baseContentType, @stampedHash, @updatedAt)
-     ON CONFLICT(rating_key) DO UPDATE SET
-       provider = excluded.provider,
-       region = excluded.region,
-       base_file = excluded.base_file,
-       base_content_type = excluded.base_content_type,
-       stamped_hash = excluded.stamped_hash,
-       updated_at = excluded.updated_at`,
-  ).run({ ...input, updatedAt: Date.now() });
 }
 
 export function deleteCollectionLogo(ratingKey: string): void {

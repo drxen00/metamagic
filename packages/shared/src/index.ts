@@ -681,37 +681,6 @@ export const posterGenerateSchema = z.object({
 });
 export type PosterGenerateInput = z.infer<typeof posterGenerateSchema>;
 
-// ---------- Streaming logos (real, colored TMDb provider logos) ----------
-
-/** A streaming service for the logo picker, from TMDb's watch-provider list. */
-export interface ProviderOption {
-  /** TMDb provider id, as a string. */
-  id: string;
-  name: string;
-  /** Full URL to the provider's colored logo (TMDb image CDN). */
-  logoUrl: string;
-}
-
-/**
- * Set (or clear) the persistent streaming logo stamped on a collection's poster.
- * `provider` is "auto" (detect the dominant service), a TMDb provider id, or
- * "none" to remove the logo and restore the clean poster.
- */
-export const collectionLogoSchema = z.object({
-  provider: z.string().min(1),
-  region: z.string().optional(),
-});
-export type CollectionLogoInput = z.infer<typeof collectionLogoSchema>;
-
-/** The streaming logo currently stamped on a collection, if any. */
-export interface CollectionLogoState {
-  /** "auto", a TMDb provider id, or null when no logo is stamped. */
-  provider: string | null;
-  /** Resolved display name of the stamped service, when known. */
-  providerName?: string;
-  region?: string;
-}
-
 export const mediuxSyncSettingsSchema = z.object({
   enabled: z.boolean().optional(),
   mode: mediuxSyncModeSchema.optional(),
@@ -760,6 +729,8 @@ export const badgeTypeSchema = z.enum([
   "rating",
   "new",
   "text",
+  /** The streaming service a title is on (auto-detected via TMDb), as its real logo. */
+  "streaming",
 ]);
 export type BadgeType = z.infer<typeof badgeTypeSchema>;
 
@@ -820,6 +791,8 @@ export interface BadgeBox {
   /** Index into the preset's badges array. */
   index: number;
   label: string;
+  /** For logo badges (streaming): the logo image to draw on the drag handle. */
+  imageUrl?: string;
   x: number;
   y: number;
   w: number;

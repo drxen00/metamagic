@@ -84,7 +84,7 @@ export function registerOverlayRoutes(app: FastifyInstance): void {
       if (!ratingKey) return reply.status(400).send({ error: "ratingKey is required" }) as never;
       const client = requirePlex();
       const item = await client.item(ratingKey);
-      return { boxes: badgeLayout({ id: 0, ...input }, item, true) };
+      return { boxes: await badgeLayout({ id: 0, ...input }, item, true) };
     },
   );
 

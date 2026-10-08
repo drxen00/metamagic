@@ -70,11 +70,12 @@ assets (no lifting Kometa's trademarked logo PNGs). Asset strategy:
 - [x] Poster generator (backdrop/member art + gradient + title) — v1
 - [x] Poster source controls — shuffle, pick a member, prefer collection/TMDb backdrop
 - [x] Collage posters (member posters behind the gradient)
-- [x] Real colored streaming logos stamped on **any** collection poster (generated,
-      uploaded, or MediUX-synced) — pick a service or "auto" (detect the dominant
-      service via TMDb watch-providers). Persists across MediUX re-syncs.
+- [x] Streaming-service **overlay badge** — each title auto-gets the real colored
+      logo of the service it's on (TMDb watch-providers), mass-applied by preset.
+      (Logos on collection posters were tried and dropped — streaming only matters
+      for collections as a *builder*, e.g. "Netflix Originals"; see A.)
 - [ ] Watch-provider region setting in the UI (defaults to US)
-- [ ] Studio / network logos (TMDb has production-company logos; different source)
+- [ ] Studio / network logo badges (TMDb has production-company/network logos)
 
 ### D. Auto-badge overlay layer
 Our overlay tool is a custom drag-to-place builder. Kometa auto-applies a catalog
@@ -83,7 +84,8 @@ overlay renderer:
 
 - [ ] Resolution / 4K, HDR / Dolby Vision, audio codec, video format
 - [ ] Ratings badges (IMDb / Rotten Tomatoes / Metacritic — needs OMDb/MDBList)
-- [ ] Streaming service, network, runtime, airing status
+- [x] Streaming service (real logo, auto-detected per title)
+- [ ] Network, runtime, airing status
 - [ ] Award ribbons, "mediastinger" (post-credits scene)
 
 ### E. Mass library operations
