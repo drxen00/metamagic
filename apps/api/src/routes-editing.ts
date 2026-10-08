@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import {
   applyArtworkSchema,
+  collectionLogoSchema,
   editCollectionSchema,
   editItemSchema,
   integrationsSchema,
@@ -14,12 +15,14 @@ import type {
   ArtworkOption,
   ArtworkProvenance,
   CollectionCompleteness,
+  CollectionLogoState,
   IntegrationsStatus,
   MediaItem,
   MediuxMatch,
   MissingCollectionItem,
   PosterGenerateInput,
   PosterSources,
+  ProviderOption,
   TpdbSetResult,
 } from "@metamagic/shared";
 import { requirePlex } from "./client-store.js";
@@ -34,13 +37,13 @@ import {
 } from "./db.js";
 import {
   getTmdbCollectionParts,
+  listWatchProviders,
   searchTmdbCollection,
   searchTmdbCollections,
   tmdbArtwork,
   tmdbCollectionBackdropUrl,
   tmdbConfigured,
   tmdbSeasonArtwork,
-  tmdbWatchProviders,
   validateTmdbKey,
 } from "./tmdb.js";
 import { cleanCollectionTitle, resolveTmdbCollection } from "./collection-match.js";
@@ -51,7 +54,14 @@ import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
 import { generatePoster, composeCollageBase } from "./poster-gen.js";
-import { getLogo, providerToSlug } from "./logos.js";
+import {
+  applyCollectionLogo,
+  clearCollectionLogo,
+  collectionLogoState,
+  defaultRegion,
+  hasCollectionLogo,
+  restampCollectionLogo,
+} from "./collection-logo.js";
 import { rememberMediuxSet } from "./mediux-sync.js";
 import { recordActivity } from "./activity.js";
 
@@ -325,6 +335,14 @@ export function registerEditingRoutes(app: FastifyInstance): void {
         input.kind,
       );
     }
+    // A collection with a persistent streaming logo keeps it on the new poster.
+    if (
+      input.kind === "poster" &&
+      item.type === "collection" &&
+      hasCollectionLogo(req.params.ratingKey)
+    ) {
+      await restampCollectionLogo(client, req.params.ratingKey).catch(() => undefined);
+    }
     return { ok: true };
   });
 
@@ -360,6 +378,9 @@ export function registerEditingRoutes(app: FastifyInstance): void {
           req.params.ratingKey,
           kind,
         );
+      }
+      if (kind === "poster" && item.type === "collection" && hasCollectionLogo(req.params.ratingKey)) {
+        await restampCollectionLogo(client, req.params.ratingKey).catch(() => undefined);
       }
       return { ok: true };
     },
@@ -549,38 +570,6 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     throw new PlexError("This collection has no artwork to build a poster from.", 400);
   }
 
-  /** Resolve the logo to stamp: a chosen brand, or the collection's dominant service. */
-  async function resolveLogo(
-    children: MediaItem[],
-    logoInput: string | undefined,
-  ): Promise<{ path: string } | undefined> {
-    if (!logoInput || logoInput === "none") return undefined;
-    if (logoInput !== "auto") {
-      const l = getLogo(logoInput);
-      return l ? { path: l.path } : undefined;
-    }
-    if (!tmdbConfigured()) return undefined;
-    const region = getAppSetting("watch_region") || "US";
-    const members = children
-      .filter((c) => c.tmdbId && (c.type === "movie" || c.type === "show"))
-      .slice(0, 8);
-    const tally = new Map<string, number>();
-    for (const m of members) {
-      try {
-        const mediaType = m.type === "show" ? "tv" : "movie";
-        for (const name of await tmdbWatchProviders(m.tmdbId!, mediaType, region)) {
-          const slug = providerToSlug(name);
-          if (slug) tally.set(slug, (tally.get(slug) ?? 0) + 1);
-        }
-      } catch {
-        // skip this member
-      }
-    }
-    const best = [...tally.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
-    const l = getLogo(best);
-    return l ? { path: l.path } : undefined;
-  }
-
   async function buildPoster(
     client: PlexClient,
     ratingKey: string,
@@ -589,7 +578,6 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     const coll = await client.item(ratingKey);
     const children = await client.collectionChildren(ratingKey).catch(() => [] as MediaItem[]);
     const title = input.title?.trim() || coll.title;
-    const logo = await resolveLogo(children, input.logo);
 
     if (input.style === "collage") {
       const members = children.filter((c) => c.type !== "collection" && c.thumb).slice(0, 9);
@@ -598,11 +586,11 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       ).filter((b): b is Buffer => !!b);
       if (tiles.length === 0) throw new PlexError("No member posters to build a collage.", 400);
       const base = await composeCollageBase(tiles);
-      return { buffer: await generatePoster(base, title, { accent: input.accent, logo }), title };
+      return { buffer: await generatePoster(base, title, { accent: input.accent }), title };
     }
 
     const src = await resolveSource(client, ratingKey, coll, children, input.source);
-    return { buffer: await generatePoster(src, title, { accent: input.accent, logo }), title };
+    return { buffer: await generatePoster(src, title, { accent: input.accent }), title };
   }
 
   /** The source images the generator can build from — for the pick/shuffle UI. */
@@ -644,6 +632,10 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       await client.uploadArtwork(req.params.ratingKey, "poster", buffer, "image/jpeg");
       recordArtworkSource(req.params.ratingKey, "poster", "metamagic", "Generated poster");
       forgetOriginalPoster(req.params.ratingKey);
+      // Keep any persistent streaming logo on top of the freshly generated poster.
+      if (hasCollectionLogo(req.params.ratingKey)) {
+        await restampCollectionLogo(client, req.params.ratingKey).catch(() => undefined);
+      }
       recordActivity({
         kind: "poster-set",
         title,
@@ -652,6 +644,60 @@ export function registerEditingRoutes(app: FastifyInstance): void {
         trigger: "manual",
       });
       return { ok: true };
+    },
+  );
+
+  // ---------- Streaming logos (real colored TMDb provider logos) ----------
+
+  /** The streaming services available to stamp, from TMDb's watch-provider list. */
+  app.get<{ Querystring: { region?: string } }>(
+    "/api/logos/providers",
+    async (req): Promise<ProviderOption[]> => {
+      if (!tmdbConfigured()) return [];
+      const region = req.query.region?.trim() || defaultRegion();
+      return listWatchProviders(region).catch(() => []);
+    },
+  );
+
+  /** The streaming logo currently stamped on a collection, if any. */
+  app.get<{ Params: { ratingKey: string } }>(
+    "/api/collections/:ratingKey/logo",
+    async (req): Promise<CollectionLogoState> => collectionLogoState(req.params.ratingKey),
+  );
+
+  /** Stamp (provider id / "auto") or clear ("none") a collection's streaming logo. */
+  app.put<{ Params: { ratingKey: string } }>(
+    "/api/collections/:ratingKey/logo",
+    async (req): Promise<CollectionLogoState> => {
+      const input = collectionLogoSchema.parse(req.body);
+      const client = requirePlex();
+      const item = await client.item(req.params.ratingKey).catch(() => undefined);
+      if (input.provider === "none") {
+        await clearCollectionLogo(client, req.params.ratingKey);
+        recordActivity({
+          kind: "poster-set",
+          title: item?.title ?? "Collection",
+          detail: "removed streaming logo",
+          status: "ok",
+          trigger: "manual",
+        });
+        return { provider: null };
+      }
+      const region = input.region?.trim() || defaultRegion();
+      const { name } = await applyCollectionLogo(
+        client,
+        req.params.ratingKey,
+        input.provider,
+        region,
+      );
+      recordActivity({
+        kind: "poster-set",
+        title: item?.title ?? "Collection",
+        detail: `streaming logo · ${name}`,
+        status: "ok",
+        trigger: "manual",
+      });
+      return collectionLogoState(req.params.ratingKey);
     },
   );
 

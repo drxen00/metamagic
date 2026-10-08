@@ -13,14 +13,16 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: "0.29.0",
-    title: "Streaming logos on collection posters",
-    date: "2026-09-28",
+    version: "0.30.0",
+    title: "Real streaming logos, on any collection",
+    date: "2026-10-01",
     added: [
-      "The collection poster generator can stamp a streaming-service logo (Netflix, Max, Apple TV, Paramount+, Crunchyroll, and more) in the corner — pick a service, or “Auto” to detect the one most of the collection’s titles are on (via TMDb). Logos are from the CC0 Simple Icons set.",
+      "Stamp a real, full-color streaming-service logo (Netflix, Disney+, Max, Prime Video, Apple TV+, Hulu, and every other service TMDb knows) on any collection — generated, uploaded, or MediUX-synced. Open a collection and pick a service, or “Auto” to use the one most of its titles are on.",
+      "Logos stick: MetaMagic re-stamps the logo automatically after a MediUX auto-sync replaces the poster, so an auto-synced collection keeps its badge.",
     ],
     fixed: [
-      "Collections can no longer be chosen in the overlay live preview — they have no quality/resolution attributes, so overlays never applied to them.",
+      "Streaming logos are now the real, colored brand logos (from TMDb) instead of plain white icons.",
+      "Collections no longer appear in the overlay live preview at all — they have no quality/resolution attributes, so overlays never applied to them.",
     ],
   },
   {
