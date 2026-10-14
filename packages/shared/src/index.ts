@@ -443,10 +443,34 @@ export interface StudioAutomation {
   studios: StudioCollection[];
 }
 
+/** One actor → collection mapping. */
+export interface ActorCollection {
+  /** TMDb person id. */
+  personId: number;
+  /** Actor name; also the collection title. */
+  name: string;
+  /** Only create/keep when at least this many qualifying films are owned. */
+  minMovies: number;
+  /**
+   * Billing cutoff that counts as a "main character" role: the actor must be
+   * among the top N billed (1 = headliner, 3 = lead roles). 0 = any role.
+   */
+  maxBilling: number;
+  /** TMDb profile image path, used as the collection poster when created. */
+  profilePath?: string;
+}
+
+/** Auto-create/maintain collections of an actor's (lead-role) movies. */
+export interface ActorAutomation {
+  enabled: boolean;
+  actors: ActorCollection[];
+}
+
 export interface AutomationPresets {
   franchise: FranchiseAutoCreate;
   autoAdd: AutoAddExisting;
   studio: StudioAutomation;
+  actor: ActorAutomation;
   /** When the preset automations last ran (they're gated to once a day). */
   lastRunAt?: number;
 }
@@ -464,6 +488,22 @@ export const studioAutomationSchema = z.object({
     .max(50),
 });
 export type StudioAutomationInput = z.infer<typeof studioAutomationSchema>;
+
+export const actorAutomationSchema = z.object({
+  enabled: z.boolean(),
+  actors: z
+    .array(
+      z.object({
+        personId: z.number().int().positive(),
+        name: z.string().min(1),
+        minMovies: z.number().int().min(1).max(50),
+        maxBilling: z.number().int().min(0).max(20),
+        profilePath: z.string().optional(),
+      }),
+    )
+    .max(100),
+});
+export type ActorAutomationInput = z.infer<typeof actorAutomationSchema>;
 
 export const franchiseAutoCreateSchema = z.object({
   enabled: z.boolean(),
@@ -599,6 +639,22 @@ export interface CompanyOption {
   ownedCount?: number;
   /** Total films TMDb lists for this company. */
   movieCount?: number;
+}
+
+/** A TMDb person candidate for the actor-automation picker. */
+export interface PersonOption {
+  id: number;
+  name: string;
+  /** TMDb profile image path (pass back when adding, for the collection poster). */
+  profilePath?: string;
+  /** Small headshot URL for the picker. */
+  profileUrl?: string;
+  /** A couple of their best-known titles, for telling apart same-named people. */
+  knownFor?: string[];
+  /** Owned films where they're one of the top-3 billed (a lead role). */
+  ownedLeadCount?: number;
+  /** Owned films they appear in at all. */
+  ownedCount?: number;
 }
 
 // ---------- MediUX auto-sync ----------

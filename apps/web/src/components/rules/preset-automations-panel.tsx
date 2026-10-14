@@ -13,10 +13,13 @@ import {
   Search,
   Settings,
   Trash2,
+  UserRound,
 } from "lucide-react";
 import type {
+  ActorAutomation,
   AutomationPresets,
   CompanyOption,
+  PersonOption,
   PlexCollection,
   StudioAutomation,
 } from "@metamagic/shared";
@@ -25,7 +28,7 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog } from "@/components/ui/dialog";
-import { Input, Label } from "@/components/ui/input";
+import { Input, Label, NativeSelect } from "@/components/ui/input";
 import { JobLog } from "./job-log";
 
 /** Small "Run now" button + progress dialog, shared by the preset cards. */
@@ -241,6 +244,8 @@ export function PresetAutomations() {
 
       <StudioCard />
 
+      <ActorCard />
+
       {franchiseRun.dialog("Creating franchise collections")}
       {autoAddRun.dialog("Adding to existing collections")}
     </div>
@@ -447,6 +452,237 @@ function StudioCard() {
       )}
     </Card>
     {studioRun.dialog("Building studio collections")}
+    </>
+  );
+}
+
+/** What counts as a "main character" role, by TMDb billing position. */
+const BILLING_OPTIONS: { value: number; label: string }[] = [
+  { value: 1, label: "Top-billed only" },
+  { value: 3, label: "Lead roles (top 3)" },
+  { value: 5, label: "Main cast (top 5)" },
+  { value: 0, label: "Any role" },
+];
+
+/** Auto-create/maintain collections of an actor's lead-role movies. */
+function ActorCard() {
+  const qc = useQueryClient();
+  const [show, setShow] = React.useState(false);
+  const [query, setQuery] = React.useState("");
+  const [debounced, setDebounced] = React.useState("");
+
+  const { data } = useQuery({
+    queryKey: ["automation-presets"],
+    queryFn: () => api<AutomationPresets>("/api/automations/presets"),
+  });
+  const actor: ActorAutomation = data?.actor ?? { enabled: false, actors: [] };
+
+  const save = useMutation({
+    mutationFn: (body: ActorAutomation) =>
+      api("/api/automations/actor", { method: "PUT", body: JSON.stringify(body) }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["automation-presets"] }),
+  });
+
+  const actorRun = useRunNow("/api/automations/actor/run", () => {
+    qc.invalidateQueries({ queryKey: ["automation-presets"] });
+    qc.invalidateQueries({ queryKey: ["collections"] });
+  });
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebounced(query), 300);
+    return () => clearTimeout(t);
+  }, [query]);
+
+  const { data: people, isFetching } = useQuery({
+    queryKey: ["tmdb-people", debounced],
+    queryFn: () => api<PersonOption[]>(`/api/tmdb/people?q=${encodeURIComponent(debounced)}`),
+    enabled: show && debounced.trim().length > 1,
+  });
+
+  const addActor = (p: PersonOption) => {
+    if (actor.actors.some((a) => a.personId === p.id)) return;
+    save.mutate({
+      ...actor,
+      actors: [
+        ...actor.actors,
+        { personId: p.id, name: p.name, minMovies: 3, maxBilling: 3, profilePath: p.profilePath },
+      ],
+    });
+    setQuery("");
+    setDebounced("");
+  };
+
+  const removeActor = (personId: number) =>
+    save.mutate({ ...actor, actors: actor.actors.filter((a) => a.personId !== personId) });
+
+  const update = (personId: number, patch: { minMovies?: number; maxBilling?: number }) =>
+    save.mutate({
+      ...actor,
+      actors: actor.actors.map((a) => (a.personId === personId ? { ...a, ...patch } : a)),
+    });
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <UserRound className="h-4 w-4 text-primary" /> Actor collections
+              </CardTitle>
+              <CardDescription className="mt-1 max-w-2xl">
+                Keep a collection of the movies you own where an actor plays a main character —
+                e.g. Ryan Gosling, Tom Hanks. Cameos and bit parts are left out, new arrivals are
+                added automatically, and new collections get the actor’s portrait as their poster.
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-1.5">
+              {actorRun.button}
+              <Button
+                variant={actor.enabled ? "default" : "outline"}
+                loading={save.isPending && save.variables?.enabled !== actor.enabled}
+                onClick={() => save.mutate({ ...actor, enabled: !actor.enabled })}
+              >
+                {actor.enabled ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                {actor.enabled ? "On" : "Off"}
+              </Button>
+              <Button variant="ghost" size="icon" title="Actors" onClick={() => setShow((s) => !s)}>
+                <Settings className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        {show && (
+          <CardContent className="space-y-3">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Add an actor… (e.g. Ryan Gosling)"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                className="pl-9"
+              />
+              {debounced.trim().length > 1 && (isFetching || people) ? (
+                <div className="absolute z-20 mt-1 max-h-80 w-full space-y-0.5 overflow-y-auto rounded-md border border-border bg-popover p-1 shadow-lg">
+                  {!people && isFetching ? (
+                    <p className="px-2 py-2 text-xs text-muted-foreground">Searching actors…</p>
+                  ) : (
+                    people?.map((p) => {
+                      const added = actor.actors.some((a) => a.personId === p.id);
+                      return (
+                        <button
+                          key={p.id}
+                          disabled={added}
+                          onClick={() => addActor(p)}
+                          className="flex w-full items-center gap-2.5 rounded px-2 py-1.5 text-left text-sm hover:bg-secondary/60 disabled:opacity-40"
+                        >
+                          <span className="flex h-11 w-8 shrink-0 items-center justify-center overflow-hidden rounded bg-secondary/60">
+                            {p.profileUrl ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={p.profileUrl} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              <UserRound className="h-4 w-4 text-muted-foreground" />
+                            )}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium">{p.name}</span>
+                            {p.knownFor && p.knownFor.length > 0 && (
+                              <span className="block truncate text-[11px] text-muted-foreground">
+                                {p.knownFor.join(" · ")}
+                              </span>
+                            )}
+                            {p.ownedCount !== undefined && (
+                              <span className="mt-0.5 flex items-center gap-1.5 text-xs">
+                                <span
+                                  className={cn(
+                                    "font-medium",
+                                    (p.ownedLeadCount ?? 0) > 0
+                                      ? "text-primary"
+                                      : "text-muted-foreground",
+                                  )}
+                                >
+                                  {p.ownedLeadCount ?? 0} lead role{p.ownedLeadCount === 1 ? "" : "s"} in your library
+                                </span>
+                                <span className="text-muted-foreground">
+                                  · {p.ownedCount} film{p.ownedCount === 1 ? "" : "s"} total
+                                </span>
+                              </span>
+                            )}
+                          </span>
+                          {added ? (
+                            <span className="shrink-0 text-[10px] font-medium uppercase text-muted-foreground">
+                              added
+                            </span>
+                          ) : (
+                            <Plus className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                          )}
+                        </button>
+                      );
+                    })
+                  )}
+                  {people && people.length === 0 && !isFetching && (
+                    <p className="px-2 py-2 text-xs text-muted-foreground">No actors matched.</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {actor.actors.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No actors yet — search above to add one.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {actor.actors.map((a) => (
+                  <div
+                    key={a.personId}
+                    className="flex flex-wrap items-center gap-3 rounded-md border border-border/60 bg-secondary/20 p-2.5"
+                  >
+                    <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
+                    <NativeSelect
+                      value={a.maxBilling}
+                      onChange={(e) => update(a.personId, { maxBilling: Number(e.target.value) })}
+                      className="h-7 w-auto text-xs"
+                      title="Which roles count"
+                    >
+                      {BILLING_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      Min films
+                      <Input
+                        type="number"
+                        min={1}
+                        max={50}
+                        defaultValue={a.minMovies}
+                        onBlur={(e) => {
+                          const v = Math.min(50, Math.max(1, Number(e.target.value) || 1));
+                          if (v !== a.minMovies) update(a.personId, { minMovies: v });
+                        }}
+                        className="h-7 w-16"
+                      />
+                    </label>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      title="Remove actor"
+                      onClick={() => removeActor(a.personId)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-muted-foreground">
+              Roles are judged by TMDb’s billing order. Removing an actor here stops maintaining
+              their collection — it doesn’t delete it.
+            </p>
+          </CardContent>
+        )}
+      </Card>
+      {actorRun.dialog("Building actor collections")}
     </>
   );
 }

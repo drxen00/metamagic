@@ -1,11 +1,25 @@
 import type { FastifyBaseLogger } from "fastify";
-import type { AutoAddExisting, FranchiseAutoCreate, StudioAutomation } from "@metamagic/shared";
-import type { PlexClient } from "./plex.js";
-import { getAppSetting, setAppSetting } from "./db.js";
+import type {
+  ActorAutomation,
+  AutoAddExisting,
+  FranchiseAutoCreate,
+  LibrarySection,
+  StudioAutomation,
+} from "@metamagic/shared";
+import { EDIT_TYPE_IDS, type PlexClient } from "./plex.js";
+import { getAppSetting, recordArtworkSource, setAppSetting } from "./db.js";
 import { discoverCollections } from "./discover.js";
 import { indexByIds } from "./mediux.js";
 import { resolveTmdbCollection } from "./collection-match.js";
-import { discoverByCompany, getTmdbCollectionParts, tmdbConfigured } from "./tmdb.js";
+import {
+  discoverByCompany,
+  getTmdbCollectionParts,
+  personMovieCredits,
+  tmdbConfigured,
+  tmdbImageUrl,
+  type PersonMovieCredit,
+} from "./tmdb.js";
+import { fetchRemoteImage } from "./remote-image.js";
 import { recordActivity } from "./activity.js";
 import { arrAlreadyRequested, markArrRequested } from "./db.js";
 import { getArrAutoRequest, getArrConfig, radarrRequest } from "./arr.js";
@@ -56,6 +70,14 @@ export function getStudioAutomation(): StudioAutomation {
 
 export function setStudioAutomation(cfg: StudioAutomation): void {
   setAppSetting("auto_studio", JSON.stringify(cfg));
+}
+
+export function getActorAutomation(): ActorAutomation {
+  return readJson<ActorAutomation>("auto_actor", { enabled: false, actors: [] });
+}
+
+export function setActorAutomation(cfg: ActorAutomation): void {
+  setAppSetting("auto_actor", JSON.stringify(cfg));
 }
 
 export function automationsLastRunAt(): number | undefined {
@@ -187,63 +209,23 @@ export async function runStudioAutomation(
     return;
   }
 
-  const index = await indexByIds(client);
-  const collections = await client.collections();
-  const byName = new Map<string, { ratingKey: string }>(
-    collections.map((c) => [normTitle(c.title), { ratingKey: c.ratingKey }]),
-  );
+  const ctx = await namedCollectionContext(client);
 
   for (const studio of cfg.studios) {
     try {
       opts.report?.setCurrent(`Checking ${studio.name}…`);
       const movies = await discoverByCompany(studio.companyId);
       const owned = movies
-        .map((m) => index.get(`tmdb:${m.tmdbId}`))
+        .map((m) => ctx.index.get(`tmdb:${m.tmdbId}`))
         .filter((hit): hit is NonNullable<typeof hit> => !!hit && hit.type === "movie");
       if (owned.length < studio.minMovies) {
         opts.report?.log(`· ${studio.name} — only ${owned.length} owned (min ${studio.minMovies})`);
         continue;
       }
-
-      const ownedKeys = owned.map((o) => o.ratingKey);
-      const existing = byName.get(normTitle(studio.name));
-      if (existing) {
-        const children = await client.collectionChildren(existing.ratingKey);
-        const present = new Set(children.map((c) => c.ratingKey));
-        const toAdd = ownedKeys.filter((k) => !present.has(k));
-        if (toAdd.length === 0) {
-          opts.report?.log(`· ${studio.name} — already complete`);
-          continue;
-        }
-        await client.addToCollection(existing.ratingKey, toAdd);
-        opts.report?.log(`✓ ${studio.name} — added ${toAdd.length}`);
-        recordActivity({
-          kind: "collection-updated",
-          title: studio.name,
-          detail: `added ${toAdd.length} ${studio.name} film(s)`,
-          status: "ok",
-          trigger: "studio automation",
-        });
-      } else {
-        const sectionId = owned[0].sectionId;
-        const section = (await client.sections()).find((s) => s.id === sectionId);
-        if (!section) continue;
-        const created = await client.createCollection(
-          sectionId,
-          section.type,
-          studio.name,
-          ownedKeys,
-        );
-        byName.set(normTitle(studio.name), { ratingKey: created.ratingKey });
-        opts.report?.log(`✓ created “${studio.name}” (${ownedKeys.length} films)`);
-        recordActivity({
-          kind: "collection-created",
-          title: `Created collection “${studio.name}”`,
-          detail: `${ownedKeys.length} film(s)`,
-          status: "ok",
-          trigger: "studio automation",
-        });
-      }
+      await syncNamedCollection(client, ctx, studio.name, owned, {
+        trigger: "studio automation",
+        report: opts.report,
+      });
       log.info({ studio: studio.name }, "studio automation");
     } catch (err) {
       log.error({ err, studio: studio.name }, "studio automation failed");
@@ -252,12 +234,179 @@ export async function runStudioAutomation(
   opts.report?.log("• done");
 }
 
+/** Owned films that count for an actor: a top-`maxBilling` role (0 = any role). */
+export function qualifyingCredits(
+  credits: PersonMovieCredit[],
+  maxBilling: number,
+): PersonMovieCredit[] {
+  return maxBilling > 0 ? credits.filter((c) => c.order < maxBilling) : credits;
+}
+
+/**
+ * Create/maintain a collection per configured actor, holding the owned movies
+ * where they play a main character (top-billed, per TMDb's cast order). New
+ * collections get the actor's TMDb portrait as their poster.
+ */
+export async function runActorAutomation(
+  client: PlexClient,
+  log: FastifyBaseLogger,
+  opts: RunOpts = {},
+): Promise<void> {
+  const cfg = getActorAutomation();
+  if (!opts.manual && !cfg.enabled) return;
+  if (cfg.actors.length === 0) {
+    opts.report?.log("• no actors configured — add one in settings.");
+    return;
+  }
+  if (!tmdbConfigured()) {
+    opts.report?.log("✗ Add a TMDb API key in Settings first.");
+    return;
+  }
+
+  const ctx = await namedCollectionContext(client);
+
+  for (const actor of cfg.actors) {
+    try {
+      opts.report?.setCurrent(`Checking ${actor.name}…`);
+      const credits = qualifyingCredits(await personMovieCredits(actor.personId), actor.maxBilling);
+      const owned = credits
+        .map((c) => ctx.index.get(`tmdb:${c.tmdbId}`))
+        .filter((hit): hit is NonNullable<typeof hit> => !!hit && hit.type === "movie");
+      const roleNote = actor.maxBilling > 0 ? "lead-role " : "";
+      if (owned.length < actor.minMovies) {
+        opts.report?.log(
+          `· ${actor.name} — only ${owned.length} owned ${roleNote}film(s) (min ${actor.minMovies})`,
+        );
+        continue;
+      }
+      await syncNamedCollection(client, ctx, actor.name, owned, {
+        trigger: "actor automation",
+        report: opts.report,
+        onCreated: actor.profilePath
+          ? (ratingKey, sectionId) => setPortraitPoster(client, ratingKey, sectionId, actor.profilePath!)
+          : undefined,
+      });
+      log.info({ actor: actor.name }, "actor automation");
+    } catch (err) {
+      opts.report?.log(`✗ ${actor.name} — ${err instanceof Error ? err.message : "failed"}`);
+      log.error({ err, actor: actor.name }, "actor automation failed");
+    }
+  }
+  opts.report?.log("• done");
+}
+
+/** Use a TMDb portrait as a freshly created collection's poster (best effort). */
+async function setPortraitPoster(
+  client: PlexClient,
+  ratingKey: string,
+  sectionId: string,
+  profilePath: string,
+): Promise<void> {
+  try {
+    const url = tmdbImageUrl(profilePath);
+    const image = await fetchRemoteImage(url);
+    await client.uploadArtwork(ratingKey, "poster", image.buffer, image.contentType);
+    await client.lockArtwork(sectionId, EDIT_TYPE_IDS.collection, ratingKey, "poster");
+    recordArtworkSource(ratingKey, "poster", "tmdb", "TMDb portrait", url);
+  } catch {
+    // A missing poster isn't worth failing the collection over.
+  }
+}
+
+// ---------- Named-collection maintenance (studio / actor) ----------
+
+interface NamedCollectionContext {
+  index: Awaited<ReturnType<typeof indexByIds>>;
+  sections: LibrarySection[];
+  /** Existing collections, keyed by `${sectionId}:${normalized title}`. */
+  byName: Map<string, { ratingKey: string }>;
+}
+
+async function namedCollectionContext(client: PlexClient): Promise<NamedCollectionContext> {
+  const [index, collections, sections] = await Promise.all([
+    indexByIds(client),
+    client.collections(),
+    client.sections(),
+  ]);
+  const byName = new Map<string, { ratingKey: string }>();
+  for (const c of collections) {
+    byName.set(`${c.sectionId ?? ""}:${normTitle(c.title)}`, { ratingKey: c.ratingKey });
+  }
+  return { index, sections, byName };
+}
+
+/**
+ * Make sure a collection called `name` holds every owned film in `owned`. Films
+ * can live in different libraries and a Plex collection belongs to exactly one,
+ * so there's one collection per library the films are in. Adds only — never
+ * removes what the user put there.
+ */
+async function syncNamedCollection(
+  client: PlexClient,
+  ctx: NamedCollectionContext,
+  name: string,
+  owned: { ratingKey: string; sectionId: string }[],
+  opts: {
+    trigger: string;
+    report?: AutomationReporter;
+    onCreated?: (ratingKey: string, sectionId: string) => Promise<void>;
+  },
+): Promise<void> {
+  const bySection = new Map<string, string[]>();
+  for (const o of owned) {
+    const keys = bySection.get(o.sectionId) ?? [];
+    if (!keys.includes(o.ratingKey)) keys.push(o.ratingKey);
+    bySection.set(o.sectionId, keys);
+  }
+  const multi = bySection.size > 1;
+
+  for (const [sectionId, keys] of bySection) {
+    const section = ctx.sections.find((s) => s.id === sectionId);
+    if (!section) continue;
+    const where = multi ? ` (${section.title})` : "";
+    const key = `${sectionId}:${normTitle(name)}`;
+    const existing = ctx.byName.get(key);
+
+    if (existing) {
+      const children = await client.collectionChildren(existing.ratingKey);
+      const present = new Set(children.map((c) => c.ratingKey));
+      const toAdd = keys.filter((k) => !present.has(k));
+      if (toAdd.length === 0) {
+        opts.report?.log(`· ${name}${where} — already complete`);
+        continue;
+      }
+      await client.addToCollection(existing.ratingKey, toAdd);
+      opts.report?.log(`✓ ${name}${where} — added ${toAdd.length}`);
+      recordActivity({
+        kind: "collection-updated",
+        title: name,
+        detail: `added ${toAdd.length} film(s)`,
+        status: "ok",
+        trigger: opts.trigger,
+      });
+    } else {
+      const created = await client.createCollection(sectionId, section.type, name, keys);
+      ctx.byName.set(key, { ratingKey: created.ratingKey });
+      await opts.onCreated?.(created.ratingKey, sectionId);
+      opts.report?.log(`✓ created “${name}”${where} (${keys.length} films)`);
+      recordActivity({
+        kind: "collection-created",
+        title: `Created collection “${name}”`,
+        detail: `${keys.length} film(s)`,
+        status: "ok",
+        trigger: opts.trigger,
+      });
+    }
+  }
+}
+
 /** True when any preset automation is switched on. */
 export function presetAutomationsAnyEnabled(): boolean {
   return (
     getFranchiseAutoCreate().enabled ||
     getAutoAddExisting().enabled ||
-    getStudioAutomation().enabled
+    getStudioAutomation().enabled ||
+    getActorAutomation().enabled
   );
 }
 
@@ -350,5 +499,10 @@ export async function runPresetAutomations(
     await runStudioAutomation(client, log);
   } catch (err) {
     log.error({ err }, "studio automation sweep threw");
+  }
+  try {
+    await runActorAutomation(client, log);
+  } catch (err) {
+    log.error({ err }, "actor automation sweep threw");
   }
 }

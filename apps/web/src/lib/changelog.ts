@@ -13,6 +13,19 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.32.0",
+    title: "Actor collections",
+    date: "2026-10-14",
+    added: [
+      "New automation: Actor collections. Search an actor (e.g. Ryan Gosling) and MetaMagic keeps a collection of the movies you own where they play a main character — cameos and bit parts are left out. Choose what counts (top-billed, top 3, top 5, or any role) and a minimum number of films.",
+      "The actor search shows how many lead roles each person has in your library, so it’s obvious who’s worth a collection.",
+      "New actor collections get the actor’s portrait as their poster, and new arrivals are added automatically.",
+    ],
+    fixed: [
+      "Studio collections now work across multiple movie libraries (e.g. Movies + 4K Movies) — each library gets its own collection instead of the films being added to the wrong one.",
+    ],
+  },
+  {
     version: "0.31.0",
     title: "Streaming logos are an overlay now",
     date: "2026-10-08",

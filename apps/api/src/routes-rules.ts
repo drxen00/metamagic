@@ -1,5 +1,6 @@
 import type { FastifyInstance } from "fastify";
 import {
+  actorAutomationSchema,
   automationSettingsSchema,
   autoAddExistingSchema,
   discordSettingsInputSchema,
@@ -12,6 +13,7 @@ import {
   type AutomationPresets,
   type AutomationSettings,
   type CompanyOption,
+  type PersonOption,
   type DiscordEvents,
   type DiscordSettings,
   type DiscoveredCollection,
@@ -57,16 +59,26 @@ import {
   automationsLastRunAt,
   getAutoAddExisting,
   getFranchiseAutoCreate,
+  getActorAutomation,
   getStudioAutomation,
+  qualifyingCredits,
+  runActorAutomation,
   runAutoAddExisting,
   runFranchiseAutoCreate,
   runStudioAutomation,
+  setActorAutomation,
   setAutoAddExisting,
   setFranchiseAutoCreate,
   setStudioAutomation,
 } from "./automations.js";
 import { discoverCollections } from "./discover.js";
-import { companyMovieStats, searchCompanies, searchKeywords } from "./tmdb.js";
+import {
+  companyMovieStats,
+  personMovieCredits,
+  searchCompanies,
+  searchKeywords,
+  searchPeople,
+} from "./tmdb.js";
 import { startJob, getJob } from "./jobs.js";
 import { getDiscordEvents, notifyMediuxSweep, sendTestNotification, type MediuxSweepChange } from "./notify.js";
 import { automationsPaused } from "./scheduler.js";
@@ -433,6 +445,7 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     franchise: getFranchiseAutoCreate(),
     autoAdd: getAutoAddExisting(),
     studio: getStudioAutomation(),
+    actor: getActorAutomation(),
     lastRunAt: automationsLastRunAt(),
   });
 
@@ -452,6 +465,50 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     setStudioAutomation(studioAutomationSchema.parse(req.body));
     return presets();
   });
+
+  app.put("/api/automations/actor", async (req): Promise<AutomationPresets> => {
+    setActorAutomation(actorAutomationSchema.parse(req.body));
+    return presets();
+  });
+
+  // Actor search for the actor-automation picker. Enriched with how many of
+  // their films you own, and in how many of those they're top-3 billed (a lead)
+  // — so you can see at a glance whether a collection would be worth it.
+  app.get<{ Querystring: { q?: string } }>(
+    "/api/tmdb/people",
+    async (req): Promise<PersonOption[]> => {
+      const q = req.query.q?.trim();
+      if (!q) return [];
+      const people: PersonOption[] = await searchPeople(q);
+      const client = plexClient();
+      if (!client) return people;
+
+      let index: Map<string, { type: string }>;
+      try {
+        index = await getLibraryIndexCached(client);
+      } catch {
+        return people;
+      }
+      const owns = (id: string) => index.get(`tmdb:${id}`)?.type === "movie";
+
+      const enriched = await Promise.all(
+        people.slice(0, 8).map(async (p): Promise<PersonOption> => {
+          try {
+            const credits = await personMovieCredits(p.id);
+            return {
+              ...p,
+              ownedCount: credits.filter((c) => owns(c.tmdbId)).length,
+              ownedLeadCount: qualifyingCredits(credits, 3).filter((c) => owns(c.tmdbId)).length,
+            };
+          } catch {
+            return p;
+          }
+        }),
+      );
+      // Keep TMDb's relevance order, but float people you actually own films of.
+      return enriched.sort((a, b) => Number((b.ownedCount ?? 0) > 0) - Number((a.ownedCount ?? 0) > 0));
+    },
+  );
 
   // Studio (production company) search for the studio-automation picker.
   // Enriches candidates with a logo, origin country, how many of their films you
@@ -518,6 +575,14 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     const client = requirePlex();
     const job = startJob("studio-run", (report) =>
       runStudioAutomation(client, app.log, { report, manual: true }),
+    );
+    return { jobId: job.id };
+  });
+
+  app.post("/api/automations/actor/run", async () => {
+    const client = requirePlex();
+    const job = startJob("actor-run", (report) =>
+      runActorAutomation(client, app.log, { report, manual: true }),
     );
     return { jobId: job.id };
   });
