@@ -45,7 +45,8 @@ list/chart sources. Highest-impact to add:
 ### B. Pre-made "category" collection sets
 One-click category collections, same engine as studio collections:
 
-- [ ] **Genre**, **Decade/Year**, **Director**, **Actor**, **Writer**
+- [x] **Actor** — lead-role actor collections (TMDb billing order), with portrait posters
+- [ ] **Genre**, **Decade/Year**, **Director**, **Writer**
 - [ ] **Country / region**, **Resolution**, **Audio/Subtitle language**
 - [ ] **Seasonal** (holidays) collections
 

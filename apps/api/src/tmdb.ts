@@ -171,6 +171,80 @@ export async function searchCompanies(query: string): Promise<CompanySearchResul
   }));
 }
 
+export interface PersonSearchResult {
+  id: number;
+  name: string;
+  profilePath?: string;
+  profileUrl?: string;
+  knownFor: string[];
+}
+
+/** Search TMDb people by name, actors first. */
+export async function searchPeople(query: string): Promise<PersonSearchResult[]> {
+  const data = await tmdbFetch<{
+    results?: {
+      id: number;
+      name: string;
+      profile_path?: string | null;
+      known_for_department?: string;
+      popularity?: number;
+      known_for?: { title?: string; name?: string }[];
+    }[];
+  }>(`/search/person?query=${encodeURIComponent(query)}&include_adult=false`);
+  return (data.results ?? [])
+    .filter((p) => !p.known_for_department || p.known_for_department === "Acting")
+    .slice(0, 15)
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      profilePath: p.profile_path ?? undefined,
+      profileUrl: p.profile_path ? `${IMG_LOGO}${p.profile_path}` : undefined,
+      knownFor: (p.known_for ?? [])
+        .map((k) => k.title ?? k.name)
+        .filter((t): t is string => !!t)
+        .slice(0, 3),
+    }));
+}
+
+/** One film an actor appears in, with their billing position. */
+export interface PersonMovieCredit {
+  tmdbId: string;
+  title: string;
+  /** 0-based billing order (0 = top-billed). */
+  order: number;
+}
+
+const personCreditsCache = new Map<number, { at: number; credits: PersonMovieCredit[] }>();
+
+/**
+ * Every film a person is credited in as cast, with billing order. Uncredited
+ * cameos are dropped. Cached in-memory (6h) — the picker and the automation
+ * run reuse the same lookup.
+ */
+export async function personMovieCredits(personId: number): Promise<PersonMovieCredit[]> {
+  const hit = personCreditsCache.get(personId);
+  if (hit && Date.now() - hit.at < COMPANY_STATS_TTL) return hit.credits;
+  const data = await tmdbFetch<{
+    cast?: { id: number; title?: string; order?: number; character?: string; adult?: boolean }[];
+  }>(`/person/${personId}/movie_credits`);
+  const best = new Map<string, PersonMovieCredit>();
+  for (const c of data.cast ?? []) {
+    if (c.adult || /uncredited/i.test(c.character ?? "")) continue;
+    const credit = { tmdbId: String(c.id), title: c.title ?? "", order: c.order ?? 999 };
+    // Same film listed twice (two characters) — keep the higher billing.
+    const prev = best.get(credit.tmdbId);
+    if (!prev || credit.order < prev.order) best.set(credit.tmdbId, credit);
+  }
+  const credits = [...best.values()];
+  personCreditsCache.set(personId, { at: Date.now(), credits });
+  return credits;
+}
+
+/** Full-size TMDb image URL for a profile/poster path. */
+export function tmdbImageUrl(filePath: string): string {
+  return `${IMG_FULL}${filePath}`;
+}
+
 const companyStatsCache = new Map<number, { at: number; ids: string[]; total: number }>();
 const COMPANY_STATS_TTL = 6 * 60 * 60 * 1000;
 
