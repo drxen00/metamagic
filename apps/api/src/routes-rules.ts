@@ -10,6 +10,8 @@ import {
   mediuxWatchUpdateSchema,
   ruleInputSchema,
   type ActivityEvent,
+  type ActorSuggestion,
+  type ActorSuggestions,
   type AutomationPresets,
   type AutomationSettings,
   type CompanyOption,
@@ -72,6 +74,7 @@ import {
   setStudioAutomation,
 } from "./automations.js";
 import { discoverCollections } from "./discover.js";
+import { getActorSuggestions, scanActorSuggestions } from "./actor-suggest.js";
 import {
   companyMovieStats,
   personMovieCredits,
@@ -576,6 +579,21 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     const job = startJob("studio-run", (report) =>
       runStudioAutomation(client, app.log, { report, manual: true }),
     );
+    return { jobId: job.id };
+  });
+
+  // Actors with several lead roles in your library (from the last scan).
+  app.get(
+    "/api/automations/actor/suggestions",
+    async (): Promise<ActorSuggestions> => getActorSuggestions(),
+  );
+
+  // Rescan the library for actor suggestions (background job with progress).
+  app.post("/api/automations/actor/suggestions/scan", async () => {
+    const client = requirePlex();
+    const job = startJob<ActorSuggestion>("actor-suggest", async (report) => {
+      await scanActorSuggestions(client, report);
+    });
     return { jobId: job.id };
   });
 

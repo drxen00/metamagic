@@ -135,6 +135,13 @@ db.exec(`
     fetched_at INTEGER NOT NULL
   );
 
+  /* Cached TMDb top-billed cast per movie, for actor-collection suggestions */
+  CREATE TABLE IF NOT EXISTS tmdb_cast_cache (
+    tmdb_id TEXT PRIMARY KEY,
+    cast_json TEXT NOT NULL,
+    fetched_at INTEGER NOT NULL
+  );
+
   /* Cached TMDb watch-provider lookups (per title + region) for auto logo overlays */
   CREATE TABLE IF NOT EXISTS tmdb_provider_cache (
     key TEXT PRIMARY KEY,
@@ -916,6 +923,29 @@ export function cacheMovieCollection(
        collection_name = excluded.collection_name,
        fetched_at = excluded.fetched_at`,
   ).run(tmdbId, collectionId, collectionName, Date.now());
+}
+
+const CAST_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** A movie's cached top-billed cast (JSON payload owned by tmdb.ts). */
+export function getCachedCast<T>(tmdbId: string): T[] | undefined {
+  const row = db
+    .prepare("SELECT cast_json, fetched_at FROM tmdb_cast_cache WHERE tmdb_id = ?")
+    .get(tmdbId) as { cast_json: string; fetched_at: number } | undefined;
+  if (!row || Date.now() - row.fetched_at > CAST_CACHE_TTL_MS) return undefined;
+  try {
+    return JSON.parse(row.cast_json) as T[];
+  } catch {
+    return undefined;
+  }
+}
+
+export function cacheCast(tmdbId: string, cast: unknown[]): void {
+  db.prepare(
+    `INSERT INTO tmdb_cast_cache (tmdb_id, cast_json, fetched_at)
+     VALUES (?, ?, ?)
+     ON CONFLICT(tmdb_id) DO UPDATE SET cast_json = excluded.cast_json, fetched_at = excluded.fetched_at`,
+  ).run(tmdbId, JSON.stringify(cast), Date.now());
 }
 
 const PROVIDER_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;

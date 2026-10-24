@@ -12,11 +12,15 @@ import {
   RotateCw,
   Search,
   Settings,
+  Sparkles,
   Trash2,
   UserRound,
 } from "lucide-react";
 import type {
   ActorAutomation,
+  ActorSuggestion,
+  ActorSuggestions,
+  JobStatus,
   AutomationPresets,
   CompanyOption,
   PersonOption,
@@ -512,6 +516,55 @@ function ActorCard() {
     setDebounced("");
   };
 
+  // ---- Suggestions: actors with several lead roles in the library ----
+  const [scanJobId, setScanJobId] = React.useState<string | null>(null);
+  const [minLeads, setMinLeads] = React.useState(3);
+  const { data: suggested } = useQuery({
+    queryKey: ["actor-suggestions"],
+    queryFn: () => api<ActorSuggestions>("/api/automations/actor/suggestions"),
+  });
+  const scan = useMutation({
+    mutationFn: () =>
+      api<{ jobId: string }>("/api/automations/actor/suggestions/scan", { method: "POST" }),
+    onSuccess: (r) => setScanJobId(r.jobId),
+  });
+  const { data: scanJob } = useQuery({
+    queryKey: ["job", scanJobId],
+    queryFn: () => api<JobStatus<ActorSuggestion>>(`/api/jobs/${scanJobId}`),
+    enabled: !!scanJobId,
+    refetchInterval: (q) => (q.state.data?.status === "running" ? 1000 : false),
+  });
+  const scanning = scan.isPending || scanJob?.status === "running";
+  React.useEffect(() => {
+    if (scanJob && scanJob.status !== "running") {
+      qc.invalidateQueries({ queryKey: ["actor-suggestions"] });
+    }
+  }, [scanJob, qc]);
+
+  const configuredIds = new Set(actor.actors.map((a) => a.personId));
+  const suggestions = (suggested?.suggestions ?? []).filter(
+    (s) => !configuredIds.has(s.personId) && s.leadCount >= minLeads,
+  );
+
+  const addSuggestions = (list: ActorSuggestion[]) => {
+    const fresh = list.filter((s) => !configuredIds.has(s.personId));
+    if (fresh.length === 0) return;
+    save.mutate({
+      ...actor,
+      actors: [
+        ...actor.actors,
+        ...fresh.map((s) => ({
+          personId: s.personId,
+          name: s.name,
+          // Never require more films than they actually lead, or it'd never build.
+          minMovies: Math.min(3, s.leadCount),
+          maxBilling: 3,
+          profilePath: s.profilePath,
+        })),
+      ],
+    });
+  };
+
   const removeActor = (personId: number) =>
     save.mutate({ ...actor, actors: actor.actors.filter((a) => a.personId !== personId) });
 
@@ -537,6 +590,11 @@ function ActorCard() {
               </CardDescription>
             </div>
             <div className="flex items-center gap-1.5">
+              {suggestions.length > 0 && !show && (
+                <Button size="sm" variant="ghost" onClick={() => setShow(true)}>
+                  <Sparkles className="h-3.5 w-3.5 text-primary" /> {suggestions.length} suggested
+                </Button>
+              )}
               {actorRun.button}
               <Button
                 variant={actor.enabled ? "default" : "outline"}
@@ -675,6 +733,121 @@ function ActorCard() {
                 ))}
               </div>
             )}
+            <div className="space-y-2 border-t border-border/60 pt-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <p className="flex items-center gap-1.5 text-sm font-semibold">
+                    <Sparkles className="h-3.5 w-3.5 text-primary" /> Suggested from your library
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {scanning
+                      ? (scanJob?.current ?? "Starting scan…")
+                      : suggested?.scannedAt
+                        ? `Actors who lead several of your movies — last scanned ${new Date(
+                            suggested.scannedAt,
+                          ).toLocaleDateString()}.`
+                        : "Scan your movies to find actors who lead several of them."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    Min lead roles
+                    <Input
+                      type="number"
+                      min={2}
+                      max={20}
+                      value={minLeads}
+                      onChange={(e) =>
+                        setMinLeads(Math.min(20, Math.max(2, Number(e.target.value) || 2)))
+                      }
+                      className="h-7 w-14"
+                    />
+                  </label>
+                  <Button size="sm" variant="outline" loading={scanning} onClick={() => scan.mutate()}>
+                    <Search className="h-3.5 w-3.5" />
+                    {suggested?.scannedAt ? "Rescan" : "Scan library"}
+                  </Button>
+                </div>
+              </div>
+
+              {scanJob?.status === "error" && (
+                <p className="text-xs text-destructive">{scanJob.error}</p>
+              )}
+
+              {suggested?.scannedAt && !scanning && suggestions.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  No new suggestions at {minLeads}+ lead roles — everyone who qualifies is already
+                  added. Try lowering the minimum.
+                </p>
+              )}
+
+              {suggestions.length > 0 && (
+                <>
+                  <div className="max-h-96 space-y-1 overflow-y-auto pr-1">
+                    {suggestions.map((s) => (
+                      <div
+                        key={s.personId}
+                        className="flex items-center gap-2.5 rounded-md border border-border/60 bg-secondary/10 p-2"
+                      >
+                        <span className="flex h-11 w-8 shrink-0 items-center justify-center overflow-hidden rounded bg-secondary/60">
+                          {s.profileUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={s.profileUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <UserRound className="h-4 w-4 text-muted-foreground" />
+                          )}
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex items-center gap-1.5">
+                            <span className="truncate font-medium">{s.name}</span>
+                            <span className="shrink-0 text-xs font-medium text-primary">
+                              {s.leadCount} lead roles
+                            </span>
+                          </span>
+                          <span
+                            className="block truncate text-[11px] text-muted-foreground"
+                            title={s.films.map((f) => f.title).join(", ")}
+                          >
+                            {s.films.map((f) => f.title).join(" · ")}
+                          </span>
+                          {s.existingCollection && (
+                            <span className="block text-[11px] text-muted-foreground">
+                              You have a “{s.existingCollection}” collection — adding keeps it synced.
+                            </span>
+                          )}
+                        </span>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={save.isPending}
+                          onClick={() => addSuggestions([s])}
+                        >
+                          <Plus className="h-3.5 w-3.5" /> Add
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-[11px] text-muted-foreground">
+                      {actor.enabled
+                        ? "Added actors are built on the next sweep — or hit Run now."
+                        : "Turn the automation On (or hit Run now) to build the collections."}
+                    </p>
+                    {suggestions.length > 1 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={save.isPending}
+                        onClick={() => addSuggestions(suggestions)}
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Add all {suggestions.length}
+                      </Button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
             <p className="text-[11px] text-muted-foreground">
               Roles are judged by TMDb’s billing order. Removing an actor here stops maintaining
               their collection — it doesn’t delete it.
