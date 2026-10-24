@@ -641,6 +641,28 @@ export interface CompanyOption {
   movieCount?: number;
 }
 
+/** An actor with several lead roles in your library — from the suggestions scan. */
+export interface ActorSuggestion {
+  personId: number;
+  name: string;
+  profilePath?: string;
+  profileUrl?: string;
+  /** Owned films (unique by TMDb id) where they're top-3 billed. */
+  leadCount: number;
+  /** Those films, most recent first. */
+  films: { ratingKey: string; title: string; year?: number; thumb?: string }[];
+  /** Already in the actor automation (filled in live, not stored). */
+  configured?: boolean;
+  /** A Plex collection with their name already exists (but isn't auto-synced). */
+  existingCollection?: string;
+}
+
+export interface ActorSuggestions {
+  /** When the library was last scanned; undefined = never. */
+  scannedAt?: number;
+  suggestions: ActorSuggestion[];
+}
+
 /** A TMDb person candidate for the actor-automation picker. */
 export interface PersonOption {
   id: number;

@@ -13,6 +13,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.33.0",
+    title: "Actor suggestions",
+    date: "2026-10-24",
+    added: [
+      "Actor collections now suggest actors for you: scan your library and MetaMagic lists the actors who lead the most of your movies (e.g. “John Wayne — 3 lead roles: True Grit, Rio Bravo, The Searchers”) that you haven’t set up yet. Add them one at a time or all at once.",
+      "Suggestions remember the last scan, flag actors who already have a collection (adding them keeps it synced), and let you set the minimum number of lead roles. Rescans are near-instant thanks to caching.",
+    ],
+  },
+  {
     version: "0.32.0",
     title: "Actor collections",
     date: "2026-10-14",

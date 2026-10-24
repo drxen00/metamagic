@@ -46,6 +46,7 @@ list/chart sources. Highest-impact to add:
 One-click category collections, same engine as studio collections:
 
 - [x] **Actor** — lead-role actor collections (TMDb billing order), with portrait posters
+      and library-scan suggestions (actors who lead the most of your films)
 - [ ] **Genre**, **Decade/Year**, **Director**, **Writer**
 - [ ] **Country / region**, **Resolution**, **Audio/Subtitle language**
 - [ ] **Seasonal** (holidays) collections

@@ -1,7 +1,9 @@
 import type { ArtworkOption } from "@metamagic/shared";
 import {
+  cacheCast,
   cacheMovieCollection,
   cacheProviders,
+  getCachedCast,
   getAppSetting,
   getCachedMovieCollection,
   getCachedProviders,
@@ -238,6 +240,44 @@ export async function personMovieCredits(personId: number): Promise<PersonMovieC
   const credits = [...best.values()];
   personCreditsCache.set(personId, { at: Date.now(), credits });
   return credits;
+}
+
+/** One top-billed cast member of a movie. */
+export interface CastMember {
+  personId: number;
+  name: string;
+  /** 0-based billing order. */
+  order: number;
+  profilePath?: string;
+}
+
+/**
+ * A movie's top-billed cast (first 5, uncredited dropped), cached for 30 days —
+ * credits rarely change, so a library rescan is nearly free after the first.
+ */
+export async function movieTopCast(tmdbMovieId: string): Promise<CastMember[]> {
+  const cached = getCachedCast<CastMember>(tmdbMovieId);
+  if (cached) return cached;
+  const data = await tmdbFetch<{
+    cast?: { id: number; name: string; order?: number; character?: string; profile_path?: string | null }[];
+  }>(`/movie/${tmdbMovieId}/credits`);
+  const cast = (data.cast ?? [])
+    .filter((c) => !/uncredited/i.test(c.character ?? ""))
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+    .slice(0, 5)
+    .map((c) => ({
+      personId: c.id,
+      name: c.name,
+      order: c.order ?? 999,
+      profilePath: c.profile_path ?? undefined,
+    }));
+  cacheCast(tmdbMovieId, cast);
+  return cast;
+}
+
+/** Small TMDb profile/poster thumbnail URL. */
+export function tmdbThumbUrl(filePath: string): string {
+  return `${IMG_LOGO}${filePath}`;
 }
 
 /** Full-size TMDb image URL for a profile/poster path. */
