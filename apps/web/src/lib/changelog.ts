@@ -13,6 +13,16 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.34.0",
+    title: "Separate episode-card sets",
+    date: "2026-10-30",
+    added: [
+      "Shows can now track two MediUX sets: one for the show & season posters and one just for episode title cards. Open a show or season’s poster picker → MediUX YAML and you’ll see a box for each — great for when an uploader publishes them separately, or you like one set’s posters and another’s cards.",
+      "The episode-cards box only ever uses the title cards from the set you paste, and it always wins for cards. Auto-sync re-applies both when new seasons arrive, so there’s no more juggling two YAMLs by hand.",
+      "MediUX Auto-Sync now shows which set(s) each item is tracking (with links), and lets you drop a show’s posters or card set on its own.",
+    ],
+  },
+  {
     version: "0.33.0",
     title: "Actor suggestions",
     date: "2026-10-24",

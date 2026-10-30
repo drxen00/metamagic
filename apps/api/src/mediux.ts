@@ -148,6 +148,49 @@ export function parseMediuxYaml(text: string): MediuxSet {
   return { entries, collections };
 }
 
+/**
+ * Which part of a set to apply. A show can track two MediUX sets — one for the
+ * show & season posters, one for episode title cards (MediUX uploaders often
+ * publish them separately):
+ * - `all`: everything in the YAML
+ * - `posters`: show/movie/collection posters & backgrounds and season posters —
+ *   no episode cards (used when a separate episode-card set is tracked)
+ * - `episodes`: only episode title cards
+ */
+export type MediuxPart = "all" | "posters" | "episodes";
+
+/** Keep only the requested part of a parsed set; empty entries are dropped. */
+export function filterSet(set: MediuxSet, part: MediuxPart): MediuxSet {
+  if (part === "all") return set;
+  const entries: MediuxEntry[] = [];
+  for (const e of set.entries) {
+    const seasons: Record<string, MediuxSeason> = {};
+    for (const [num, sd] of Object.entries(e.seasons)) {
+      const season: MediuxSeason =
+        part === "posters"
+          ? { urlPoster: sd.urlPoster, episodes: {} }
+          : { urlPoster: undefined, episodes: sd.episodes };
+      if (season.urlPoster || Object.keys(season.episodes).length > 0) seasons[num] = season;
+    }
+    const entry: MediuxEntry =
+      part === "posters"
+        ? { id: e.id, urlPoster: e.urlPoster, urlBackground: e.urlBackground, seasons }
+        : { id: e.id, seasons };
+    if (entry.urlPoster || entry.urlBackground || Object.keys(seasons).length > 0) {
+      entries.push(entry);
+    }
+  }
+  const collections = part === "posters" ? set.collections : [];
+  if (entries.length === 0 && collections.length === 0) {
+    throw new MediuxError(
+      part === "episodes"
+        ? "This set has no episode title cards — paste it into the show & season posters box instead."
+        : "This set only has episode title cards — paste it into the episode cards box instead.",
+    );
+  }
+  return { entries, collections };
+}
+
 function seasonCount(e: MediuxEntry): number {
   return Object.values(e.seasons).filter((s) => s.urlPoster).length;
 }
@@ -270,8 +313,12 @@ async function applyImage(
   if (sectionId) await client.lockArtwork(sectionId, typeId, ratingKey, kind);
 }
 
-export async function previewMediux(client: PlexClient, yamlText: string): Promise<MediuxMatch[]> {
-  const set = parseMediuxYaml(yamlText);
+export async function previewMediux(
+  client: PlexClient,
+  yamlText: string,
+  part: MediuxPart = "all",
+): Promise<MediuxMatch[]> {
+  const set = filterSet(parseMediuxYaml(yamlText), part);
   const index = await indexByIds(client);
   const results: MediuxMatch[] = [];
 
@@ -322,8 +369,9 @@ export async function applyMediux(
   client: PlexClient,
   yamlText: string,
   report?: ProgressReporter<MediuxMatch>,
+  part: MediuxPart = "all",
 ): Promise<MediuxMatch[]> {
-  const set = parseMediuxYaml(yamlText);
+  const set = filterSet(parseMediuxYaml(yamlText), part);
   report?.setCurrent("Scanning your libraries…");
   const index = await indexByIds(client);
   const origin = extractSetUrl(yamlText);

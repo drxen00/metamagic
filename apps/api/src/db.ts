@@ -197,6 +197,9 @@ function ensureColumn(table: string, column: string, ddl: string): void {
 ensureColumn("activity_events", "url", "url TEXT");
 ensureColumn("mediux_watches", "created_at", "created_at INTEGER");
 ensureColumn("mediux_watches", "thumb", "thumb TEXT");
+// A show can track a second MediUX set just for episode title cards.
+ensureColumn("mediux_watches", "episodes_yaml", "episodes_yaml TEXT");
+ensureColumn("mediux_watches", "episodes_set_url", "episodes_set_url TEXT");
 
 export interface StoredConnection {
   url: string;
@@ -732,6 +735,8 @@ interface MediuxWatchRow {
   tmdb_id: string | null;
   yaml: string;
   set_url: string | null;
+  episodes_yaml: string | null;
+  episodes_set_url: string | null;
   enabled: number;
   last_signature: string | null;
   last_synced_at: number | null;
@@ -742,9 +747,16 @@ interface MediuxWatchRow {
 
 /** Full row including the YAML + signature (server-internal, not sent to the browser). */
 export interface MediuxWatchFull extends MediuxWatch {
+  /** The main set (show & season posters, or a collection's set). "" when only
+   *  an episode-card set is tracked. */
   yaml: string;
+  /** Shows only: a separate set applied just for episode title cards. */
+  episodesYaml?: string;
   lastSignature?: string;
 }
+
+/** Which of a watch's sets: the main one, or a show's episode-card set. */
+export type MediuxSetSlot = "main" | "episodes";
 
 function toWatch(row: MediuxWatchRow): MediuxWatchFull {
   return {
@@ -755,6 +767,10 @@ function toWatch(row: MediuxWatchRow): MediuxWatchFull {
     tmdbId: row.tmdb_id ?? undefined,
     yaml: row.yaml,
     setUrl: row.set_url ?? undefined,
+    episodesYaml: row.episodes_yaml || undefined,
+    episodeSetUrl: row.episodes_set_url ?? undefined,
+    hasMainSet: row.yaml.trim().length > 0,
+    hasEpisodeSet: !!row.episodes_yaml,
     enabled: row.enabled !== 0,
     lastSignature: row.last_signature ?? undefined,
     lastSyncedAt: row.last_synced_at ?? undefined,
@@ -777,8 +793,10 @@ export function getMediuxWatch(ratingKey: string): MediuxWatchFull | undefined {
   return row ? toWatch(row) : undefined;
 }
 
-/** Create or update the remembered set for a collection/show. Preserves the
- *  enabled flag on update so a user's opt-out survives re-applying the set. */
+/** Create or update a remembered set for a collection/show. `slot` picks the
+ *  main set or (shows) the episode-card set; the other slot is left alone.
+ *  Preserves the enabled flag on update so a user's opt-out survives
+ *  re-applying the set. */
 export function upsertMediuxWatch(input: {
   ratingKey: string;
   type: "collection" | "show";
@@ -788,18 +806,27 @@ export function upsertMediuxWatch(input: {
   yaml: string;
   setUrl?: string;
   signature?: string;
+  slot?: MediuxSetSlot;
 }): void {
+  const episodes = input.slot === "episodes";
+  // On insert the unused slot starts empty (main yaml is NOT NULL → "").
+  const setCols = episodes
+    ? `episodes_yaml = excluded.episodes_yaml,
+       episodes_set_url = excluded.episodes_set_url,`
+    : `yaml = excluded.yaml,
+       set_url = excluded.set_url,`;
   db.prepare(
     `INSERT INTO mediux_watches
-       (rating_key, type, title, thumb, tmdb_id, yaml, set_url, enabled, last_signature, created_at, updated_at)
-     VALUES (@ratingKey, @type, @title, @thumb, @tmdbId, @yaml, @setUrl, 1, @signature, @now, @now)
+       (rating_key, type, title, thumb, tmdb_id, yaml, set_url, episodes_yaml, episodes_set_url,
+        enabled, last_signature, created_at, updated_at)
+     VALUES (@ratingKey, @type, @title, @thumb, @tmdbId, @yaml, @setUrl, @episodesYaml,
+        @episodesSetUrl, 1, @signature, @now, @now)
      ON CONFLICT(rating_key) DO UPDATE SET
        type = excluded.type,
        title = excluded.title,
        thumb = COALESCE(excluded.thumb, mediux_watches.thumb),
        tmdb_id = COALESCE(excluded.tmdb_id, mediux_watches.tmdb_id),
-       yaml = excluded.yaml,
-       set_url = COALESCE(excluded.set_url, mediux_watches.set_url),
+       ${setCols}
        last_signature = excluded.last_signature,
        updated_at = excluded.updated_at`,
   ).run({
@@ -808,11 +835,37 @@ export function upsertMediuxWatch(input: {
     title: input.title,
     thumb: input.thumb ?? null,
     tmdbId: input.tmdbId ?? null,
-    yaml: input.yaml,
-    setUrl: input.setUrl ?? null,
+    yaml: episodes ? "" : input.yaml,
+    setUrl: episodes ? null : (input.setUrl ?? null),
+    episodesYaml: episodes ? input.yaml : null,
+    episodesSetUrl: episodes ? (input.setUrl ?? null) : null,
     signature: input.signature ?? null,
     now: Date.now(),
   });
+}
+
+/**
+ * Forget one of a watch's sets. When nothing is left the watch itself is
+ * removed. Returns false when the watch doesn't exist.
+ */
+export function clearMediuxWatchSlot(ratingKey: string, slot: MediuxSetSlot): boolean {
+  const watch = getMediuxWatch(ratingKey);
+  if (!watch) return false;
+  const otherLeft = slot === "episodes" ? watch.hasMainSet : watch.hasEpisodeSet;
+  if (!otherLeft) {
+    deleteMediuxWatch(ratingKey);
+    return true;
+  }
+  if (slot === "episodes") {
+    db.prepare(
+      "UPDATE mediux_watches SET episodes_yaml = NULL, episodes_set_url = NULL, updated_at = ? WHERE rating_key = ?",
+    ).run(Date.now(), ratingKey);
+  } else {
+    db.prepare(
+      "UPDATE mediux_watches SET yaml = '', set_url = NULL, updated_at = ? WHERE rating_key = ?",
+    ).run(Date.now(), ratingKey);
+  }
+  return true;
 }
 
 export function setMediuxWatchEnabled(ratingKey: string, enabled: boolean): void {

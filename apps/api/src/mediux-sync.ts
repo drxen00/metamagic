@@ -3,13 +3,22 @@ import type { Rule } from "@metamagic/shared";
 import type { PlexClient } from "./plex.js";
 import {
   getAppSetting,
+  getMediuxWatch,
   listMediuxWatches,
   recordMediuxWatchSync,
   setAppSetting,
   upsertMediuxWatch,
+  type MediuxSetSlot,
   type MediuxWatchFull,
 } from "./db.js";
-import { applyMediux, extractSetUrl, type ProgressReporter } from "./mediux.js";
+import {
+  applyMediux,
+  extractSetUrl,
+  filterSet,
+  parseMediuxYaml,
+  type MediuxPart,
+  type ProgressReporter,
+} from "./mediux.js";
 import { evaluateRule } from "./rules.js";
 import { resolveTmdbCollection } from "./collection-match.js";
 import { recordActivity } from "./activity.js";
@@ -62,54 +71,119 @@ export async function computeSignature(
   return `coll:${children.length}:${total}`;
 }
 
+/** The collection/show a picker scope tracks sets for (a season → its show). */
+export interface WatchTarget {
+  ratingKey: string;
+  type: "collection" | "show";
+  title: string;
+  thumb?: string;
+  tmdbId?: string;
+}
+
 /**
- * Remember (or refresh) the MediUX set applied to a collection or show so it can
- * be re-applied automatically later. Season scopes map to their parent show;
- * movie scopes are ignored (no franchise-level target to sync).
+ * Resolve a picker scope to the collection or show whose MediUX sets are
+ * remembered. Season scopes map to their parent show; movies (and anything
+ * else) have no franchise-level target, so they resolve to undefined.
+ */
+export async function resolveWatchTarget(
+  client: PlexClient,
+  scopeRatingKey: string,
+  scopeType: "collection" | "show" | "season" | "movie" | undefined,
+): Promise<WatchTarget | undefined> {
+  const item = await client.item(scopeRatingKey).catch(() => undefined);
+  if (!item) return undefined;
+  const effectiveType = scopeType ?? item.type;
+
+  if (effectiveType === "collection") {
+    const children = await client.collectionChildren(scopeRatingKey).catch(() => []);
+    const resolved = await resolveTmdbCollection(scopeRatingKey, item.title, children).catch(
+      () => undefined,
+    );
+    return {
+      ratingKey: scopeRatingKey,
+      type: "collection",
+      title: item.title,
+      thumb: item.thumb,
+      tmdbId: resolved ? String(resolved.id) : undefined,
+    };
+  }
+  if (effectiveType === "show") {
+    return { ratingKey: scopeRatingKey, type: "show", title: item.title, thumb: item.thumb, tmdbId: item.tmdbId };
+  }
+  if (effectiveType === "season" && item.parentRatingKey) {
+    const show = await client.item(item.parentRatingKey).catch(() => undefined);
+    if (!show) return undefined;
+    return { ratingKey: show.ratingKey, type: "show", title: show.title, thumb: show.thumb, tmdbId: show.tmdbId };
+  }
+  return undefined;
+}
+
+/**
+ * Remember (or refresh) a MediUX set applied to a collection or show so it can
+ * be re-applied automatically later. A show has two slots — `main` (show &
+ * season posters) and `episodes` (episode title cards only) — so sets that
+ * MediUX uploaders publish separately can both be tracked.
  */
 export async function rememberMediuxSet(
   client: PlexClient,
   scopeRatingKey: string,
   scopeType: "collection" | "show" | "season" | "movie" | undefined,
   yaml: string,
+  slot: MediuxSetSlot = "main",
 ): Promise<void> {
-  const item = await client.item(scopeRatingKey).catch(() => undefined);
-  if (!item) return;
-
-  const effectiveType = scopeType ?? item.type;
-  let type: "collection" | "show";
-  let ratingKey = scopeRatingKey;
-  let title = item.title;
-  let thumb = item.thumb;
-  let tmdbId: string | undefined;
-
-  if (effectiveType === "collection") {
-    type = "collection";
-    const children = await client.collectionChildren(ratingKey).catch(() => []);
-    const resolved = await resolveTmdbCollection(ratingKey, item.title, children).catch(
-      () => undefined,
-    );
-    tmdbId = resolved ? String(resolved.id) : undefined;
-  } else if (effectiveType === "show") {
-    type = "show";
-    tmdbId = item.tmdbId;
-  } else if (effectiveType === "season") {
-    if (!item.parentRatingKey) return;
-    const show = await client.item(item.parentRatingKey).catch(() => undefined);
-    if (!show) return;
-    type = "show";
-    ratingKey = show.ratingKey;
-    title = show.title;
-    thumb = show.thumb;
-    tmdbId = show.tmdbId;
-  } else {
-    // Movies (and anything else) have no collection/show to keep in sync.
-    return;
-  }
-
+  const target = await resolveWatchTarget(client, scopeRatingKey, scopeType);
+  if (!target) return;
+  // Episode cards only exist on shows.
+  const effectiveSlot = target.type === "show" ? slot : "main";
   const setUrl = extractSetUrl(yaml).url;
-  const signature = await computeSignature(client, { ratingKey, type }).catch(() => undefined);
-  upsertMediuxWatch({ ratingKey, type, title, thumb, tmdbId, yaml, setUrl, signature });
+  const signature = await computeSignature(client, target).catch(() => undefined);
+  upsertMediuxWatch({ ...target, yaml, setUrl, signature, slot: effectiveSlot });
+}
+
+/**
+ * The part of a show's main set to apply: everything, unless a separate
+ * episode-card set is tracked — then its own cards are skipped so the two
+ * sets don't fight over the same episodes.
+ */
+export function mainSetPart(watch: { episodesYaml?: string } | undefined): MediuxPart {
+  return watch?.episodesYaml ? "posters" : "all";
+}
+
+/** The part a new apply should use, given the show's currently tracked sets. */
+export function partForSlot(slot: MediuxSetSlot, targetRatingKey: string | undefined): MediuxPart {
+  if (slot === "episodes") return "episodes";
+  return targetRatingKey ? mainSetPart(getMediuxWatch(targetRatingKey)) : "all";
+}
+
+/** Whether a YAML has anything for this part (no throw). */
+function hasPart(yaml: string, part: MediuxPart): boolean {
+  try {
+    filterSet(parseMediuxYaml(yaml), part);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Re-apply every set a show tracks: the main set (minus its episode cards when
+ * a separate card set exists), then the episode-card set — so the card set
+ * always wins for episode cards.
+ */
+async function applyShowSets(
+  client: PlexClient,
+  watch: MediuxWatchFull,
+  report?: ProgressReporter<MediuxMatch>,
+): Promise<void> {
+  const mainPart = mainSetPart(watch);
+  if (watch.yaml.trim() && hasPart(watch.yaml, mainPart)) {
+    if (watch.episodesYaml) report?.log("• show & season posters set");
+    await applyMediux(client, watch.yaml, report, mainPart);
+  }
+  if (watch.episodesYaml) {
+    report?.log("• episode title cards set");
+    await applyMediux(client, watch.episodesYaml, report, "episodes");
+  }
 }
 
 /** Build the transient collection-sync rule a watch stands in for. */
@@ -163,7 +237,7 @@ export async function syncWatch(
     // A show only reaches here on a real season change (detect) or on force, so
     // re-applying its art is always meaningful.
     opts.report?.setCurrent(`Re-applying “${watch.title}” artwork…`);
-    await applyMediux(client, watch.yaml, opts.report);
+    await applyShowSets(client, watch, opts.report);
     return { changed: true, added: 0, result: "artwork re-applied" };
   }
 

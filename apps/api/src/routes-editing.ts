@@ -18,6 +18,7 @@ import type {
   MediaItem,
   MediuxMatch,
   MissingCollectionItem,
+  MediuxImportInput,
   PosterGenerateInput,
   PosterSources,
   TpdbSetResult,
@@ -44,13 +45,13 @@ import {
 } from "./tmdb.js";
 import { cleanCollectionTitle, resolveTmdbCollection } from "./collection-match.js";
 import { indexByIds } from "./mediux.js";
-import { applyMediux, previewMediux } from "./mediux.js";
+import { applyMediux, filterSet, parseMediuxYaml, previewMediux } from "./mediux.js";
 import { fetchRemoteImage } from "./remote-image.js";
 import { startJob, getJob } from "./jobs.js";
 import { applyTpdbSetToCollection } from "./tpdb.js";
 import { forgetOriginalPoster } from "./overlays.js";
 import { generatePoster, composeCollageBase } from "./poster-gen.js";
-import { rememberMediuxSet } from "./mediux-sync.js";
+import { partForSlot, rememberMediuxSet, resolveWatchTarget } from "./mediux-sync.js";
 import { recordActivity } from "./activity.js";
 
 function editTypeId(itemType: string): number {
@@ -386,17 +387,39 @@ export function registerEditingRoutes(app: FastifyInstance): void {
 
   // ---------- MediUX set import ----------
 
+  /**
+   * The part of a set to preview/apply from a picker: an episode-cards box only
+   * touches title cards; a show's posters box skips its own cards when a
+   * separate episode-card set is already tracked (so the two don't fight).
+   */
+  async function mediuxPartFor(client: PlexClient, input: MediuxImportInput) {
+    const slot = input.slot ?? "main";
+    if (slot === "episodes" && input.scopeType !== "show" && input.scopeType !== "season") {
+      throw new PlexError("Episode-card sets can only be added from a show or season.", 400);
+    }
+    const target = input.scopeRatingKey
+      ? await resolveWatchTarget(client, input.scopeRatingKey, input.scopeType)
+      : undefined;
+    return { slot, part: partForSlot(slot, target?.type === "show" ? target.ratingKey : undefined) };
+  }
+
   app.post("/api/mediux/preview", async (req) => {
     const input = mediuxImportSchema.parse(req.body);
-    return previewMediux(requirePlex(), input.yaml);
+    const client = requirePlex();
+    const { part } = await mediuxPartFor(client, input);
+    return previewMediux(client, input.yaml, part);
   });
 
   // Long-running: starts a background job; poll /api/jobs/:id for progress.
   app.post("/api/mediux/apply", async (req) => {
     const input = mediuxImportSchema.parse(req.body);
     const client = requirePlex();
+    const { slot, part } = await mediuxPartFor(client, input);
+    // Fail fast (400) on a set pasted into the wrong box, before starting a job.
+    filterSet(parseMediuxYaml(input.yaml), part);
     const job = startJob<MediuxMatch>("mediux", async (report) => {
-      const results = await applyMediux(client, input.yaml, report);
+      if (part === "posters") report.log("• skipping this set's episode cards — a separate card set is tracked");
+      const results = await applyMediux(client, input.yaml, report, part);
       const applied = results.filter((r) => r.applied);
       // Name what it was for: the scoped collection/show if applied from a
       // picker, otherwise the item(s) the set actually matched.
@@ -404,11 +427,12 @@ export function registerEditingRoutes(app: FastifyInstance): void {
         ? await client.item(input.scopeRatingKey).catch(() => undefined)
         : undefined;
       const appliedTitles = applied.map((r) => r.title).filter((t): t is string => !!t);
+      const what = slot === "episodes" ? "MediUX episode cards" : "MediUX set";
       const title = scopeItem
-        ? `MediUX set → ${scopeItem.title}`
+        ? `${what} → ${scopeItem.title}`
         : appliedTitles.length === 1
-          ? `MediUX set → ${appliedTitles[0]}`
-          : `MediUX set — ${applied.length} of ${results.length} applied`;
+          ? `${what} → ${appliedTitles[0]}`
+          : `${what} — ${applied.length} of ${results.length} applied`;
       const detail = scopeItem
         ? `${applied.length} of ${results.length} applied`
         : appliedTitles.length > 1
@@ -419,7 +443,7 @@ export function registerEditingRoutes(app: FastifyInstance): void {
       // Applied from a collection/show picker → remember it for auto-sync.
       if (input.scopeRatingKey) {
         report.log("• remembering this MediUX set for auto-sync");
-        await rememberMediuxSet(client, input.scopeRatingKey, input.scopeType, input.yaml).catch(
+        await rememberMediuxSet(client, input.scopeRatingKey, input.scopeType, input.yaml, slot).catch(
           (err) => report.log(`✗ couldn't remember set — ${err instanceof Error ? err.message : "failed"}`),
         );
       }

@@ -208,6 +208,12 @@ export const mediuxImportSchema = z.object({
    */
   scopeRatingKey: z.string().optional(),
   scopeType: z.enum(["collection", "show", "season", "movie"]).optional(),
+  /**
+   * Shows/seasons only: which tracked set this is. "main" (default) is the show
+   * & season posters set; "episodes" is a separate set used only for episode
+   * title cards — both are remembered and re-applied by auto-sync.
+   */
+  slot: z.enum(["main", "episodes"]).optional(),
 });
 export type MediuxImportInput = z.infer<typeof mediuxImportSchema>;
 
@@ -697,6 +703,12 @@ export interface MediuxWatch {
   tmdbId?: string;
   /** The MediUX set page the YAML came from, when derivable. */
   setUrl?: string;
+  /** Shows: the separate episode-title-card set's page, when derivable. */
+  episodeSetUrl?: string;
+  /** A main set is tracked (show & season posters, or a collection's set). */
+  hasMainSet: boolean;
+  /** Shows: a separate episode-title-card set is tracked. */
+  hasEpisodeSet: boolean;
   /** Per-item override so users can keep sync on globally but skip a few. */
   enabled: boolean;
   lastSyncedAt?: number;
@@ -704,6 +716,14 @@ export interface MediuxWatch {
   /** When first tracked (stable — survives re-applies). */
   createdAt: number;
   updatedAt: number;
+}
+
+/** The MediUX sets tracked for the show a poster picker is scoped to. */
+export interface MediuxTrackedSets {
+  /** The show the sets belong to (a season resolves to its show). */
+  ratingKey?: string;
+  main?: { setUrl?: string };
+  episodes?: { setUrl?: string };
 }
 
 export const mediuxSortSchema = z.enum(["title", "first-tracked", "recently-synced"]);
