@@ -14,9 +14,11 @@ import {
   Sparkles,
   Trash2,
   Tv,
+  X,
 } from "lucide-react";
 import type {
   MediuxSort,
+  MediuxWatch,
   MediuxSyncMode,
   MediuxSyncState,
   UntrackedCollection,
@@ -101,6 +103,16 @@ export function MediuxSyncPanel() {
     mutationFn: (ratingKey: string) =>
       api(`/api/mediux/watches/${ratingKey}`, { method: "DELETE" }),
     onSuccess: invalidate,
+  });
+
+  // Drop one of a show's two sets (posters or episode cards), keeping the other.
+  const removeSet = useMutation({
+    mutationFn: (v: { ratingKey: string; slot: "main" | "episodes" }) =>
+      api(`/api/mediux/watches/${v.ratingKey}/sets/${v.slot}`, { method: "DELETE" }),
+    onSuccess: () => {
+      invalidate();
+      qc.invalidateQueries({ queryKey: ["mediux-tracked"] });
+    },
   });
 
   const runNow = useMutation({
@@ -332,6 +344,11 @@ export function MediuxSyncPanel() {
                       {whenLabel(w.lastSyncedAt)}
                       {w.lastResult ? ` · ${w.lastResult}` : ""}
                     </p>
+                    <TrackedSets
+                      watch={w}
+                      busy={removeSet.isPending}
+                      onRemove={(slot) => removeSet.mutate({ ratingKey: w.ratingKey, slot })}
+                    />
                   </div>
                   <div className="flex items-center gap-1.5">
                     <Button
@@ -489,5 +506,58 @@ export function MediuxSyncPanel() {
         </div>
       </Dialog>
     </>
+  );
+}
+
+/** The set(s) a watch tracks, linked to MediUX. Shows can have a posters set and
+ *  a separate episode-card set; when both exist each can be dropped on its own. */
+function TrackedSets({
+  watch,
+  busy,
+  onRemove,
+}: {
+  watch: MediuxWatch;
+  busy: boolean;
+  onRemove: (slot: "main" | "episodes") => void;
+}) {
+  const both = watch.hasMainSet && watch.hasEpisodeSet;
+  const link = (url: string | undefined) =>
+    url ? (
+      <a
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        className="text-primary underline-offset-2 hover:underline"
+      >
+        {url.replace(/^https?:\/\/(www\.)?mediux\.pro\/sets\//, "set ")}
+      </a>
+    ) : (
+      "pasted YAML"
+    );
+  const part = (label: string, url: string | undefined, slot: "main" | "episodes") => (
+    <span className="inline-flex items-center gap-1">
+      {label}: {link(url)}
+      {both && (
+        <button
+          type="button"
+          disabled={busy}
+          title={`Stop tracking the ${label.toLowerCase()} set`}
+          onClick={() => onRemove(slot)}
+          className="rounded p-0.5 text-muted-foreground hover:bg-secondary hover:text-foreground disabled:opacity-40"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      )}
+    </span>
+  );
+
+  if (watch.type !== "show") {
+    return watch.setUrl ? <p className="mt-0.5 text-xs text-muted-foreground">{part("Set", watch.setUrl, "main")}</p> : null;
+  }
+  return (
+    <p className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+      {watch.hasMainSet && part("Posters", watch.setUrl, "main")}
+      {watch.hasEpisodeSet && part("Episode cards", watch.episodeSetUrl, "episodes")}
+    </p>
   );
 }

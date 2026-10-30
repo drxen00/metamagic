@@ -21,6 +21,7 @@ import {
   type DiscoveredCollection,
   type MediuxMatch,
   type MediuxSyncState,
+  type MediuxTrackedSets,
   type MediuxWatch,
   type Rule,
   type RuleChange,
@@ -34,6 +35,7 @@ import { PlexError } from "./plex.js";
 import {
   createRule,
   deleteRule,
+  clearMediuxWatchSlot,
   deleteMediuxWatch,
   getMediuxWatch,
   getRule,
@@ -54,6 +56,7 @@ import {
   mediuxAutoSyncEnabled,
   mediuxLastCheckedAt,
   mediuxSyncMode,
+  resolveWatchTarget,
   syncWatch,
 } from "./mediux-sync.js";
 import { listActivity, recordActivity } from "./activity.js";
@@ -95,6 +98,9 @@ function toWatchSummary(w: ReturnType<typeof listMediuxWatches>[number]): Mediux
     thumb: w.thumb,
     tmdbId: w.tmdbId,
     setUrl: w.setUrl,
+    episodeSetUrl: w.episodeSetUrl,
+    hasMainSet: w.hasMainSet,
+    hasEpisodeSet: w.hasEpisodeSet,
     enabled: w.enabled,
     lastSyncedAt: w.lastSyncedAt,
     lastResult: w.lastResult,
@@ -359,6 +365,41 @@ export function registerRuleRoutes(app: FastifyInstance): void {
     deleteMediuxWatch(req.params.ratingKey);
     return { ok: true };
   });
+
+  // Forget just one of a show's sets (main or episode cards). Forgetting the
+  // last remaining set removes the watch.
+  app.delete<{ Params: { ratingKey: string; slot: string } }>(
+    "/api/mediux/watches/:ratingKey/sets/:slot",
+    async (req, reply) => {
+      const slot = req.params.slot;
+      if (slot !== "main" && slot !== "episodes") {
+        return reply.status(400).send({ error: "Unknown set — expected main or episodes." });
+      }
+      if (!clearMediuxWatchSlot(req.params.ratingKey, slot)) {
+        return reply.status(404).send({ error: "That MediUX watch no longer exists." });
+      }
+      return { ok: true };
+    },
+  );
+
+  // The sets tracked for whatever a poster picker is scoped to (a season
+  // resolves to its show) — so the picker can show "currently tracking …".
+  app.get<{ Params: { ratingKey: string }; Querystring: { type?: string } }>(
+    "/api/mediux/tracked/:ratingKey",
+    async (req): Promise<MediuxTrackedSets> => {
+      const t = req.query.type;
+      const scopeType =
+        t === "collection" || t === "show" || t === "season" || t === "movie" ? t : undefined;
+      const target = await resolveWatchTarget(requirePlex(), req.params.ratingKey, scopeType);
+      if (!target) return {};
+      const watch = getMediuxWatch(target.ratingKey);
+      return {
+        ratingKey: target.ratingKey,
+        main: watch?.hasMainSet ? { setUrl: watch.setUrl } : undefined,
+        episodes: watch?.hasEpisodeSet ? { setUrl: watch.episodeSetUrl } : undefined,
+      };
+    },
+  );
 
   // Sync one watch right now (adds new members + re-applies its set).
   app.post<{ Params: { ratingKey: string } }>(

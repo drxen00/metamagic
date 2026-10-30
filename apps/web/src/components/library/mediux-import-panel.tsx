@@ -14,12 +14,18 @@ export function MediuxImportPanel({
   rows = 6,
   onDone,
   scope,
+  slot = "main",
 }: {
   rows?: number;
   /** When set, a "Done" button appears once an apply finishes (e.g. to close the poster picker). */
   onDone?: () => void;
   /** The collection/show this picker is scoped to — lets MetaMagic remember the set for auto-sync. */
   scope?: { ratingKey: string; type: "collection" | "show" | "season" | "movie" };
+  /**
+   * Shows/seasons: which tracked set this box feeds. "episodes" applies only the
+   * episode title cards from the pasted set and remembers it separately.
+   */
+  slot?: "main" | "episodes";
 }) {
   const qc = useQueryClient();
   const [yamlText, setYamlText] = React.useState("");
@@ -32,7 +38,11 @@ export function MediuxImportPanel({
     mutationFn: () =>
       api<MediuxMatch[]>("/api/mediux/preview", {
         method: "POST",
-        body: JSON.stringify({ yaml: yamlText }),
+        body: JSON.stringify({
+          yaml: yamlText,
+          slot,
+          ...(scope ? { scopeRatingKey: scope.ratingKey, scopeType: scope.type } : {}),
+        }),
       }),
     onSuccess: (data) => {
       setPreviewResults(data);
@@ -48,6 +58,7 @@ export function MediuxImportPanel({
         method: "POST",
         body: JSON.stringify({
           yaml: yamlText,
+          slot,
           ...(scope ? { scopeRatingKey: scope.ratingKey, scopeType: scope.type } : {}),
         }),
       }),
@@ -77,12 +88,26 @@ export function MediuxImportPanel({
       qc.invalidateQueries({ queryKey: ["provenance"] });
       qc.invalidateQueries({ queryKey: ["children"] });
       qc.invalidateQueries({ queryKey: ["artwork"] });
+      qc.invalidateQueries({ queryKey: ["mediux-tracked"] });
+      qc.invalidateQueries({ queryKey: ["mediux-sync"] });
     }
   }, [jobFinished, qc]);
 
   const results = mode === "apply" ? (job?.results ?? []) : previewResults;
   const matched = results?.filter((r) => r.ratingKey).length ?? 0;
   const applied = results?.filter((r) => r.applied).length ?? 0;
+  const isShowScope = scope?.type === "show" || scope?.type === "season";
+  // A cards-only set pasted into a show's posters box still works, but tracking
+  // it as the episode-card set leaves room for a separate posters set.
+  const cardsOnlyInPostersBox =
+    slot === "main" &&
+    isShowScope &&
+    mode === "preview" &&
+    !!previewResults?.length &&
+    previewResults.every(
+      (r) => r.kind === "item" && !r.hasPoster && !r.hasBackground && r.seasonCount === 0,
+    ) &&
+    previewResults.some((r) => r.episodeCount > 0);
 
   const logRef = React.useRef<HTMLDivElement>(null);
   const logLength = job?.log?.length ?? 0;
@@ -105,9 +130,19 @@ export function MediuxImportPanel({
           setJobId(null);
         }}
         rows={rows}
-        placeholder={"metadata:\n  \"603692\":\n    url_poster: https://api.mediux.pro/assets/…"}
+        placeholder={
+          slot === "episodes"
+            ? "Paste a MediUX set whose episode title cards you want — only the cards are used"
+            : "metadata:\n  \"603692\":\n    url_poster: https://api.mediux.pro/assets/…"
+        }
         className="w-full rounded-md border border-input bg-background/50 px-3 py-2 font-mono text-xs leading-relaxed placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
       />
+      {cardsOnlyInPostersBox && (
+        <p className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+          This set only has episode title cards. Paste it into the <strong>Episode title cards</strong>{" "}
+          box instead, so you can still track a separate set for the show &amp; season posters.
+        </p>
+      )}
       {error && (
         <p className="flex items-center gap-2 text-sm text-destructive">
           <XCircle className="h-4 w-4 shrink-0" /> {error}
@@ -213,12 +248,14 @@ export function MediuxImportPanel({
           </div>
         </div>
       )}
+      {!isShowScope && (
       <p className="rounded-md border border-border/60 bg-secondary/30 px-3 py-2 text-xs text-muted-foreground">
         <strong className="font-medium text-foreground/80">Collection posters:</strong> MediUX set
         YAML almost never includes the collection’s own poster — only the movies’. To set it, open
         the collection, hit Change poster, and paste the collection image link from MediUX in the
         URL / Upload tab.
       </p>
+      )}
       <div className="flex gap-2">
         <Button
           variant="outline"

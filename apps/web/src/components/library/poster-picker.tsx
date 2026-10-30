@@ -18,6 +18,7 @@ import type {
   ArtworkOption,
   IntegrationsStatus,
   JobStatus,
+  MediuxTrackedSets,
   TpdbSetResult,
 } from "@metamagic/shared";
 import { api } from "@/lib/api";
@@ -212,18 +213,23 @@ export function PosterPicker({
               matches in your libraries (shows, seasons, episode cards, movies), not just this
               item.
             </p>
-            <MediuxImportPanel
-              rows={8}
-              onDone={onClose}
-              scope={
-                itemType === "collection" ||
-                itemType === "show" ||
-                itemType === "season" ||
-                itemType === "movie"
-                  ? { ratingKey, type: itemType }
-                  : undefined
-              }
-            />
+            {itemType === "show" || itemType === "season" ? (
+              <ShowMediuxSets
+                ratingKey={ratingKey}
+                itemType={itemType}
+                onDone={onClose}
+              />
+            ) : (
+              <MediuxImportPanel
+                rows={8}
+                onDone={onClose}
+                scope={
+                  itemType === "collection" || itemType === "movie"
+                    ? { ratingKey, type: itemType }
+                    : undefined
+                }
+              />
+            )}
           </div>
         ) : tab !== "url" ? (
           <div className="max-h-[74vh] min-h-[40vh] overflow-y-auto pr-1">
@@ -409,5 +415,79 @@ export function PosterPicker({
         {error && <p className="text-sm text-destructive">{error}</p>}
       </div>
     </Dialog>
+  );
+}
+
+/**
+ * A show's two tracked MediUX sets, side by side: one for the show & season
+ * posters and one just for episode title cards. MediUX uploaders often publish
+ * these separately; both are remembered and re-applied by auto-sync, so new
+ * seasons pick up posters *and* cards without juggling YAMLs by hand.
+ */
+function ShowMediuxSets({
+  ratingKey,
+  itemType,
+  onDone,
+}: {
+  ratingKey: string;
+  itemType: "show" | "season";
+  onDone: () => void;
+}) {
+  const { data: tracked } = useQuery({
+    queryKey: ["mediux-tracked", ratingKey],
+    queryFn: () => api<MediuxTrackedSets>(`/api/mediux/tracked/${ratingKey}?type=${itemType}`),
+  });
+  const scope = { ratingKey, type: itemType };
+
+  const trackedLine = (set: { setUrl?: string } | undefined) =>
+    set ? (
+      <span className="text-xs text-muted-foreground">
+        Tracking{" "}
+        {set.setUrl ? (
+          <a
+            href={set.setUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-primary underline-offset-2 hover:underline"
+          >
+            {set.setUrl.replace(/^https?:\/\/(www\.)?mediux\.pro\/sets\//, "MediUX set ")}
+          </a>
+        ) : (
+          "a pasted set"
+        )}{" "}
+        — pasting a new one replaces it
+      </span>
+    ) : (
+      <span className="text-xs text-muted-foreground">Nothing tracked yet</span>
+    );
+
+  return (
+    <div className="space-y-6">
+      <section className="space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold">Show &amp; season posters</h3>
+          {trackedLine(tracked?.main)}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          The show poster, background and season posters.
+          {tracked?.episodes
+            ? " Its episode cards are skipped, since a separate card set is tracked below."
+            : " If the set also has episode cards, they’re applied too — unless you add a separate card set below."}
+        </p>
+        <MediuxImportPanel rows={6} onDone={onDone} scope={scope} slot="main" />
+      </section>
+
+      <section className="space-y-2 border-t border-border/60 pt-5">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-semibold">Episode title cards</h3>
+          {trackedLine(tracked?.episodes)}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Only the episode title cards from this set are used — so you can take cards from a
+          different set than the posters. Auto-sync re-applies both when new seasons arrive.
+        </p>
+        <MediuxImportPanel rows={6} onDone={onDone} scope={scope} slot="episodes" />
+      </section>
+    </div>
   );
 }
