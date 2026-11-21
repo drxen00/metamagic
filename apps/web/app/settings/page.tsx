@@ -277,6 +277,7 @@ function IntegrationsCard() {
             onChange={(e) => setTmdbKey(e.target.value)}
           />
         </div>
+        {status && <PosterLanguages status={status} />}
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <Label htmlFor="mediux-token">MediUX API token</Label>
@@ -312,6 +313,86 @@ function IntegrationsCard() {
         </Button>
       </CardContent>
     </Card>
+  );
+}
+
+/**
+ * Which languages the TMDb poster tab offers. The first language and textless
+ * posters are listed first; the rest follow in order as fallbacks.
+ */
+function PosterLanguages({ status }: { status: IntegrationsStatus }) {
+  const qc = useQueryClient();
+  const saved = status.posterLanguages.join(", ");
+  const [text, setText] = React.useState(saved);
+  const [textless, setTextless] = React.useState(status.posterIncludeTextless);
+  React.useEffect(() => setText(saved), [saved]);
+  React.useEffect(() => setTextless(status.posterIncludeTextless), [status.posterIncludeTextless]);
+
+  const languages = text
+    .split(/[\s,]+/)
+    .map((l) => l.trim().toLowerCase())
+    .filter(Boolean);
+  const invalid = languages.filter((l) => !/^[a-z]{2}$/.test(l));
+  const dirty =
+    languages.join(",") !== status.posterLanguages.join(",") ||
+    textless !== status.posterIncludeTextless;
+
+  const save = useMutation({
+    mutationFn: () =>
+      api<IntegrationsStatus>("/api/settings/integrations", {
+        method: "PUT",
+        body: JSON.stringify({ posterLanguages: languages, posterIncludeTextless: textless }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["integrations"] });
+      qc.invalidateQueries({ queryKey: ["artwork"] });
+    },
+  });
+
+  return (
+    <div className="space-y-1.5 rounded-md border border-border/60 bg-secondary/20 p-3">
+      <Label htmlFor="poster-langs">TMDb poster languages</Label>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input
+          id="poster-langs"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="en"
+          className="max-w-[14rem]"
+        />
+        <label className="flex items-center gap-1.5 text-sm">
+          <input
+            type="checkbox"
+            checked={textless}
+            onChange={(e) => setTextless(e.target.checked)}
+            className="accent-[hsl(var(--primary))]"
+          />
+          Include textless posters
+        </label>
+        <Button
+          size="sm"
+          variant="outline"
+          loading={save.isPending}
+          disabled={!dirty || languages.length === 0 || invalid.length > 0}
+          onClick={() => save.mutate()}
+        >
+          Save
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Two-letter language codes, most preferred first — e.g. <code>fr, en</code>. The TMDb tab
+        lists your first language and textless posters first, then each fallback language.
+      </p>
+      {invalid.length > 0 && (
+        <p className="text-xs text-destructive">
+          Not a two-letter code: {invalid.join(", ")}
+        </p>
+      )}
+      {save.isError && (
+        <p className="text-xs text-destructive">{(save.error as Error).message}</p>
+      )}
+      {save.isSuccess && !dirty && <p className="text-xs text-success">Saved.</p>}
+    </div>
   );
 }
 
