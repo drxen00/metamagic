@@ -13,6 +13,14 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.35.0",
+    title: "Posters in your language",
+    date: "2026-11-21",
+    added: [
+      "Choose which languages the TMDb poster tab offers (Settings → Integrations → TMDb poster languages), most preferred first — e.g. “fr, en” — and whether to include textless posters. Your first language and textless posters are listed first, then each fallback. The default (English + textless) works exactly as before.",
+    ],
+  },
+  {
     version: "0.34.0",
     title: "Separate episode-card sets",
     date: "2026-10-30",

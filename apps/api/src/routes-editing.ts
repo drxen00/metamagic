@@ -39,6 +39,7 @@ import {
   searchTmdbCollections,
   tmdbArtwork,
   tmdbCollectionBackdropUrl,
+  posterLanguagePrefs,
   tmdbConfigured,
   tmdbSeasonArtwork,
   validateTmdbKey,
@@ -366,10 +367,17 @@ export function registerEditingRoutes(app: FastifyInstance): void {
 
   // ---------- Integrations settings ----------
 
-  app.get("/api/settings/integrations", async (): Promise<IntegrationsStatus> => ({
-    tmdbConfigured: !!getAppSetting("tmdb_api_key"),
-    mediuxTokenConfigured: !!getAppSetting("mediux_token"),
-  }));
+  const integrationsStatus = (): IntegrationsStatus => {
+    const prefs = posterLanguagePrefs();
+    return {
+      tmdbConfigured: !!getAppSetting("tmdb_api_key"),
+      mediuxTokenConfigured: !!getAppSetting("mediux_token"),
+      posterLanguages: prefs.languages,
+      posterIncludeTextless: prefs.includeTextless,
+    };
+  };
+
+  app.get("/api/settings/integrations", async (): Promise<IntegrationsStatus> => integrationsStatus());
 
   app.put("/api/settings/integrations", async (req, reply) => {
     const input = integrationsSchema.parse(req.body);
@@ -379,10 +387,13 @@ export function registerEditingRoutes(app: FastifyInstance): void {
     }
     if (input.tmdbApiKey !== undefined) setAppSetting("tmdb_api_key", input.tmdbApiKey);
     if (input.mediuxToken !== undefined) setAppSetting("mediux_token", input.mediuxToken);
-    return {
-      tmdbConfigured: !!getAppSetting("tmdb_api_key"),
-      mediuxTokenConfigured: !!getAppSetting("mediux_token"),
-    } satisfies IntegrationsStatus;
+    if (input.posterLanguages !== undefined) {
+      setAppSetting("tmdb_poster_languages", [...new Set(input.posterLanguages)].join(","));
+    }
+    if (input.posterIncludeTextless !== undefined) {
+      setAppSetting("tmdb_poster_textless", input.posterIncludeTextless ? "true" : "false");
+    }
+    return integrationsStatus();
   });
 
   // ---------- MediUX set import ----------

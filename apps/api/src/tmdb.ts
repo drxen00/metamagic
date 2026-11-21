@@ -52,9 +52,61 @@ export async function validateTmdbKey(key: string): Promise<boolean> {
   }
 }
 
+interface TmdbImage {
+  file_path: string;
+  iso_639_1: string | null;
+  vote_average: number;
+}
+
 interface TmdbImages {
-  posters?: { file_path: string; iso_639_1: string | null; vote_average: number }[];
-  backdrops?: { file_path: string; iso_639_1: string | null; vote_average: number }[];
+  posters?: TmdbImage[];
+  backdrops?: TmdbImage[];
+}
+
+export interface PosterLanguagePrefs {
+  /** ISO 639-1 codes, most preferred first. */
+  languages: string[];
+  includeTextless: boolean;
+}
+
+/** Which TMDb artwork languages to offer (Settings → Integrations). Defaults to
+ *  English + textless, which was the only behavior before this was configurable. */
+export function posterLanguagePrefs(): PosterLanguagePrefs {
+  const languages = (getAppSetting("tmdb_poster_languages") ?? "")
+    .split(",")
+    .map((l) => l.trim().toLowerCase())
+    .filter((l) => /^[a-z]{2}$/.test(l));
+  return {
+    languages: languages.length > 0 ? [...new Set(languages)] : ["en"],
+    includeTextless: getAppSetting("tmdb_poster_textless") !== "false",
+  };
+}
+
+/** TMDb's include_image_language value: the languages, plus "null" for textless. */
+function imageLanguageParam(prefs: PosterLanguagePrefs): string {
+  return [...prefs.languages, ...(prefs.includeTextless ? ["null"] : [])].join(",");
+}
+
+/**
+ * Order artwork for the picker: the primary language and textless images first
+ * (best-rated first, interleaved), then each fallback language in priority
+ * order. With the default (English only) this is plain best-rated-first — the
+ * order before languages were configurable.
+ */
+function toArtworkOptions(images: TmdbImage[], prefs: PosterLanguagePrefs): ArtworkOption[] {
+  const rank = (lang: string | null) => {
+    if (lang === null) return 0; // textless sits with the primary language
+    const i = prefs.languages.indexOf(lang);
+    return i < 0 ? prefs.languages.length : i;
+  };
+  return [...images]
+    .sort((a, b) => rank(a.iso_639_1) - rank(b.iso_639_1) || b.vote_average - a.vote_average)
+    .slice(0, 40)
+    .map((img) => ({
+      applyUrl: `${IMG_FULL}${img.file_path}`,
+      previewUrl: `${IMG_PREVIEW}${img.file_path}`,
+      provider: img.iso_639_1 ? `tmdb · ${img.iso_639_1}` : "tmdb · textless",
+    }));
 }
 
 export async function tmdbArtwork(
@@ -62,18 +114,11 @@ export async function tmdbArtwork(
   mediaType: "movie" | "tv" | "collection",
   kind: "poster" | "art",
 ): Promise<ArtworkOption[]> {
+  const prefs = posterLanguagePrefs();
   const data = await tmdbFetch<TmdbImages>(
-    `/${mediaType}/${tmdbId}/images?include_image_language=en,null`,
+    `/${mediaType}/${tmdbId}/images?include_image_language=${imageLanguageParam(prefs)}`,
   );
-  const images = (kind === "poster" ? data.posters : data.backdrops) ?? [];
-  return images
-    .sort((a, b) => b.vote_average - a.vote_average)
-    .slice(0, 40)
-    .map((img) => ({
-      applyUrl: `${IMG_FULL}${img.file_path}`,
-      previewUrl: `${IMG_PREVIEW}${img.file_path}`,
-      provider: img.iso_639_1 ? `tmdb · ${img.iso_639_1}` : "tmdb · textless",
-    }));
+  return toArtworkOptions((kind === "poster" ? data.posters : data.backdrops) ?? [], prefs);
 }
 
 /** Season posters (TMDb has no season backdrops). */
@@ -83,17 +128,11 @@ export async function tmdbSeasonArtwork(
   kind: "poster" | "art",
 ): Promise<ArtworkOption[]> {
   if (kind === "art") return [];
+  const prefs = posterLanguagePrefs();
   const data = await tmdbFetch<TmdbImages>(
-    `/tv/${tmdbShowId}/season/${seasonNumber}/images?include_image_language=en,null`,
+    `/tv/${tmdbShowId}/season/${seasonNumber}/images?include_image_language=${imageLanguageParam(prefs)}`,
   );
-  return (data.posters ?? [])
-    .sort((a, b) => b.vote_average - a.vote_average)
-    .slice(0, 40)
-    .map((img) => ({
-      applyUrl: `${IMG_FULL}${img.file_path}`,
-      previewUrl: `${IMG_PREVIEW}${img.file_path}`,
-      provider: img.iso_639_1 ? `tmdb · ${img.iso_639_1}` : "tmdb · textless",
-    }));
+  return toArtworkOptions(data.posters ?? [], prefs);
 }
 
 interface TmdbCollectionSearch {

@@ -189,11 +189,27 @@ export type EditCollectionInput = z.infer<typeof editCollectionSchema>;
 export interface IntegrationsStatus {
   tmdbConfigured: boolean;
   mediuxTokenConfigured: boolean;
+  /** TMDb poster languages (ISO 639-1), most preferred first. Default ["en"]. */
+  posterLanguages: string[];
+  /** Also offer textless TMDb posters. Default true. */
+  posterIncludeTextless: boolean;
 }
 
 export const integrationsSchema = z.object({
   tmdbApiKey: z.string().optional(),
   mediuxToken: z.string().optional(),
+  posterLanguages: z
+    .array(
+      z
+        .string()
+        .trim()
+        .toLowerCase()
+        .regex(/^[a-z]{2}$/, "Use two-letter language codes, e.g. fr, en"),
+    )
+    .min(1, "Keep at least one poster language")
+    .max(10)
+    .optional(),
+  posterIncludeTextless: z.boolean().optional(),
 });
 export type IntegrationsInput = z.infer<typeof integrationsSchema>;
 
