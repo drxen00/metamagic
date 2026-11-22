@@ -1,0 +1,39 @@
+name: CI
+
+# Type-checks the API and builds the web app on every PR (and on main), so a
+# type error can't slip through. The Docker workflow only builds the web app,
+# and the API runs via tsx, which never type-checks.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from "packageManager" in package.json.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Type-check API
+        run: pnpm --filter @metamagic/api build
+
+      - name: Build web (type-checks + Next.js build)
+        run: pnpm --filter @metamagic/web build
