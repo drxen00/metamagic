@@ -86,6 +86,8 @@ export const libraryQuerySchema = z.object({
   genre: z.string().optional(),
   year: z.coerce.number().int().optional(),
   unwatched: z.coerce.boolean().optional(),
+  /** Only items added to Plex within this many days (e.g. 30 for "New"). */
+  addedWithinDays: z.coerce.number().int().min(1).max(3650).optional(),
   /** Drop collections from the listing (they have no quality attributes). */
   excludeCollections: z.coerce.boolean().optional(),
 });

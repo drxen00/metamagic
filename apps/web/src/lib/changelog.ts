@@ -13,6 +13,14 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.36.0",
+    title: "“New” library filter",
+    date: "2026-11-22",
+    added: [
+      "A new “New (30d)” quick filter next to Unwatched in the Library shows only titles added in the last 30 days — an easy way to find new arrivals that may still need a custom poster.",
+    ],
+  },
+  {
     version: "0.35.1",
     title: "Security updates + smarter show sync",
     date: "2026-11-22",

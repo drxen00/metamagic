@@ -193,6 +193,11 @@ export class PlexClient {
     if (q.genre) params.genre = q.genre;
     if (q.year) params.year = q.year;
     if (q.unwatched) params.unwatched = 1;
+    if (q.addedWithinDays) {
+      // Plex filter operator `>>=` means "after"; the key is literally `addedAt>>`.
+      const since = Math.floor(Date.now() / 1000) - q.addedWithinDays * 86400;
+      params["addedAt>>"] = since;
+    }
 
     const data = await this.request(`/library/sections/${sectionId}/all`, params);
     const mc = data.MediaContainer;

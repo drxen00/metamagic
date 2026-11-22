@@ -18,6 +18,8 @@ import { ItemDrawer } from "@/components/library/item-drawer";
 import { AddToCollectionDialog } from "@/components/library/add-to-collection-dialog";
 
 const PAGE_SIZE = 60;
+/** Window for the "New" quick filter. */
+const RECENT_DAYS = 30;
 
 const SORTS = [
   { id: "titleSort:asc", label: "Title A→Z" },
@@ -53,6 +55,7 @@ function LibraryPageInner() {
   const [sort, setSort] = React.useState(SORTS[0].id);
   const [genre, setGenre] = React.useState("");
   const [unwatched, setUnwatched] = React.useState(false);
+  const [recent, setRecent] = React.useState(false);
   const [openItem, setOpenItem] = React.useState<string | null>(null);
   const [selected, setSelected] = React.useState<Set<string>>(new Set());
   const [bulkOpen, setBulkOpen] = React.useState(false);
@@ -75,7 +78,7 @@ function LibraryPageInner() {
   });
 
   const query = useInfiniteQuery({
-    queryKey: ["items", sectionId, debouncedSearch, sort, genre, unwatched],
+    queryKey: ["items", sectionId, debouncedSearch, sort, genre, unwatched, recent],
     enabled: !!sectionId,
     initialPageParam: 0,
     queryFn: ({ pageParam }) => {
@@ -87,6 +90,7 @@ function LibraryPageInner() {
       if (debouncedSearch) qs.set("search", debouncedSearch);
       if (genre) qs.set("genre", genre);
       if (unwatched) qs.set("unwatched", "true");
+      if (recent) qs.set("addedWithinDays", String(RECENT_DAYS));
       return api<PagedResult<MediaItem>>(`/api/library/sections/${sectionId}/items?${qs}`);
     },
     getNextPageParam: (last) => {
@@ -201,6 +205,18 @@ function LibraryPageInner() {
                 )}
               >
                 Unwatched
+              </button>
+              <button
+                onClick={() => setRecent((v) => !v)}
+                title={`Added in the last ${RECENT_DAYS} days — handy for spotting titles that may still need a custom poster`}
+                className={cn(
+                  "h-9 rounded-md border px-3 text-sm font-medium transition-colors",
+                  recent
+                    ? "border-primary bg-primary/15 text-primary"
+                    : "border-border text-muted-foreground hover:text-foreground",
+                )}
+              >
+                New ({RECENT_DAYS}d)
               </button>
             </div>
 
