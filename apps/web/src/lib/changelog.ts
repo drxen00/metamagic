@@ -13,6 +13,16 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: "0.35.1",
+    title: "Security updates + smarter show sync",
+    date: "2026-11-22",
+    fixed: [
+      "Updated Next.js, sharp, Fastify, Zod and a few transitive packages to clear every known security advisory — including a critical Next.js image-optimizer issue. MetaMagic never used that optimizer, and it’s now switched off entirely.",
+      "MediUX auto-sync now notices new episodes, not just new seasons — a newly aired episode gets its title card automatically.",
+      "Show auto-sync re-applies only the seasons that changed, instead of re-uploading every poster and title card in the show each time.",
+    ],
+  },
+  {
     version: "0.35.0",
     title: "Posters in your language",
     date: "2026-11-21",

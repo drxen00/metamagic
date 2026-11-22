@@ -50,6 +50,8 @@ export interface MediaItem {
   viewCount?: number;
   /** Season or episode number for children of a show/season */
   index?: number;
+  /** Seasons/shows: how many episodes Plex has. */
+  leafCount?: number;
   parentRatingKey?: string;
   videoResolution?: string;
   audioCodec?: string;

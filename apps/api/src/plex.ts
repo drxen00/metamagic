@@ -46,6 +46,8 @@ interface PlexMetadata {
   addedAt?: number;
   viewCount?: number;
   childCount?: number;
+  /** Episodes in a season/show (Plex "leaf" items). */
+  leafCount?: number;
   index?: number;
   parentRatingKey?: string;
   selected?: boolean;
@@ -441,6 +443,7 @@ function toMediaItem(m: PlexMetadata): MediaItem {
     addedAt: m.addedAt,
     viewCount: m.viewCount,
     index: m.index,
+    leafCount: m.leafCount !== undefined ? Number(m.leafCount) : undefined,
     parentRatingKey: m.parentRatingKey,
     videoResolution: m.Media?.[0]?.videoResolution,
     audioCodec: m.Media?.[0]?.audioCodec,

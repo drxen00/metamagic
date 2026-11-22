@@ -191,6 +191,21 @@ export function filterSet(set: MediuxSet, part: MediuxPart): MediuxSet {
   return { entries, collections };
 }
 
+/**
+ * Narrow a set to just some seasons — their posters and episode cards — and
+ * drop show-level art and collections. Used by auto-sync so a new episode
+ * re-applies only its season, not every card the show has.
+ */
+export function restrictToSeasons(set: MediuxSet, seasons: string[]): MediuxSet {
+  const keep = new Set(seasons.map(String));
+  const entries: MediuxEntry[] = [];
+  for (const e of set.entries) {
+    const picked = Object.fromEntries(Object.entries(e.seasons).filter(([num]) => keep.has(num)));
+    if (Object.keys(picked).length > 0) entries.push({ id: e.id, seasons: picked });
+  }
+  return { entries, collections: [] };
+}
+
 function seasonCount(e: MediuxEntry): number {
   return Object.values(e.seasons).filter((s) => s.urlPoster).length;
 }
@@ -370,8 +385,10 @@ export async function applyMediux(
   yamlText: string,
   report?: ProgressReporter<MediuxMatch>,
   part: MediuxPart = "all",
+  opts: { onlySeasons?: string[] } = {},
 ): Promise<MediuxMatch[]> {
-  const set = filterSet(parseMediuxYaml(yamlText), part);
+  let set = filterSet(parseMediuxYaml(yamlText), part);
+  if (opts.onlySeasons) set = restrictToSeasons(set, opts.onlySeasons);
   report?.setCurrent("Scanning your libraries…");
   const index = await indexByIds(client);
   const origin = extractSetUrl(yamlText);
