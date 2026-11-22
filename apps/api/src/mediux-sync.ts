@@ -7,6 +7,7 @@ import {
   listMediuxWatches,
   recordMediuxWatchSync,
   setAppSetting,
+  setMediuxWatchSignature,
   upsertMediuxWatch,
   type MediuxSetSlot,
   type MediuxWatchFull,
@@ -48,7 +49,8 @@ export function mediuxLastCheckedAt(): number | undefined {
 
 /**
  * A cheap fingerprint of "has anything changed that could need a re-sync".
- * - shows: the set of seasons (a new season flips it)
+ * - shows: each season with its episode count ("show2:1x10,2x8") — a new
+ *   season *or* a new episode flips it, from the single seasons listing
  * - collections: the collection's size + its library's total (a new movie
  *   anywhere in the library flips it, which is when we re-check membership)
  */
@@ -58,8 +60,8 @@ export async function computeSignature(
 ): Promise<string> {
   if (watch.type === "show") {
     const seasons = await client.children(watch.ratingKey);
-    const ids = seasons.map((s) => (s.index ?? s.ratingKey)).sort();
-    return `show:${ids.join(",")}`;
+    const parts = seasons.map((s) => `${s.index ?? s.ratingKey}x${s.leafCount ?? 0}`).sort();
+    return `show2:${parts.join(",")}`;
   }
   const children = await client.collectionChildren(watch.ratingKey);
   const item = await client.item(watch.ratingKey);
@@ -118,6 +120,29 @@ export async function resolveWatchTarget(
   return undefined;
 }
 
+/** Season → episode count from a "show2:" signature; undefined for any other. */
+function parseShowSignature(sig: string | undefined): Map<string, number> | undefined {
+  if (!sig?.startsWith("show2:")) return undefined;
+  const map = new Map<string, number>();
+  for (const part of sig.slice("show2:".length).split(",")) {
+    const [season, count] = part.split("x");
+    if (season) map.set(season, Number(count) || 0);
+  }
+  return map;
+}
+
+/**
+ * Seasons that gained episodes (or are new) between two show signatures, so
+ * auto-sync can re-apply just those. Undefined when either signature can't be
+ * compared — the caller then re-applies everything.
+ */
+export function changedSeasons(before: string | undefined, after: string): string[] | undefined {
+  const a = parseShowSignature(before);
+  const b = parseShowSignature(after);
+  if (!a || !b) return undefined;
+  return [...b].filter(([season, count]) => count > (a.get(season) ?? -1)).map(([s]) => s);
+}
+
 /**
  * Remember (or refresh) a MediUX set applied to a collection or show so it can
  * be re-applied automatically later. A show has two slots — `main` (show &
@@ -174,15 +199,17 @@ async function applyShowSets(
   client: PlexClient,
   watch: MediuxWatchFull,
   report?: ProgressReporter<MediuxMatch>,
+  onlySeasons?: string[],
 ): Promise<void> {
+  const scope = onlySeasons ? { onlySeasons } : {};
   const mainPart = mainSetPart(watch);
   if (watch.yaml.trim() && hasPart(watch.yaml, mainPart)) {
     if (watch.episodesYaml) report?.log("• show & season posters set");
-    await applyMediux(client, watch.yaml, report, mainPart);
+    await applyMediux(client, watch.yaml, report, mainPart, scope);
   }
   if (watch.episodesYaml) {
     report?.log("• episode title cards set");
-    await applyMediux(client, watch.episodesYaml, report, "episodes");
+    await applyMediux(client, watch.episodesYaml, report, "episodes", scope);
   }
 }
 
@@ -229,16 +256,27 @@ export interface SyncOutcome {
 export async function syncWatch(
   client: PlexClient,
   watch: MediuxWatchFull,
-  opts: { force: boolean; report?: ProgressReporter<MediuxMatch> },
+  opts: {
+    force: boolean;
+    report?: ProgressReporter<MediuxMatch>;
+    /** Shows: re-apply only these seasons (detect mode); everything when unset. */
+    onlySeasons?: string[];
+  },
 ): Promise<SyncOutcome> {
   const log = (line: string) => opts.report?.log(line);
 
   if (watch.type === "show") {
-    // A show only reaches here on a real season change (detect) or on force, so
-    // re-applying its art is always meaningful.
+    // Detect mode: only the seasons that gained episodes. Nothing new (e.g. an
+    // episode was deleted) means nothing to re-apply.
+    if (opts.onlySeasons && opts.onlySeasons.length === 0) {
+      return { changed: false, added: 0, result: "no change" };
+    }
     opts.report?.setCurrent(`Re-applying “${watch.title}” artwork…`);
-    await applyShowSets(client, watch, opts.report);
-    return { changed: true, added: 0, result: "artwork re-applied" };
+    await applyShowSets(client, watch, opts.report, opts.onlySeasons);
+    const which = opts.onlySeasons
+      ? `season${opts.onlySeasons.length === 1 ? "" : "s"} ${opts.onlySeasons.join(", ")}`
+      : "artwork";
+    return { changed: true, added: 0, result: `${which} re-applied` };
   }
 
   // Collection: keep membership complete, then the engine re-applies the set to
@@ -315,6 +353,13 @@ export async function runMediuxAutoSync(client: PlexClient, log: FastifyBaseLogg
       continue; // Plex unreachable for this item — try again next tick.
     }
 
+    // Upgrading from the old season-only show fingerprint: adopt the new one
+    // quietly instead of re-syncing every tracked show at once.
+    if (watch.lastSignature?.startsWith("show:") && current.startsWith("show2:")) {
+      setMediuxWatchSignature(watch.ratingKey, current);
+      watch.lastSignature = current;
+    }
+
     const changed = !watch.lastSignature || current !== watch.lastSignature;
     const due =
       mode === "detect"
@@ -323,7 +368,14 @@ export async function runMediuxAutoSync(client: PlexClient, log: FastifyBaseLogg
     if (!due) continue;
 
     try {
-      const outcome = await syncWatch(client, watch, { force: mode !== "detect" });
+      const outcome = await syncWatch(client, watch, {
+        force: mode !== "detect",
+        // Detect mode on a show: just the seasons that gained episodes.
+        onlySeasons:
+          mode === "detect" && watch.type === "show"
+            ? changedSeasons(watch.lastSignature, current)
+            : undefined,
+      });
       const after = await computeSignature(client, watch).catch(() => current);
       recordMediuxWatchSync(watch.ratingKey, after, outcome.changed ? outcome.result : "no change");
       // Only surface items that actually changed — a collection that just saw an

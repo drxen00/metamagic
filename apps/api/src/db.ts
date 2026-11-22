@@ -886,6 +886,15 @@ export function recordMediuxWatchSync(
   ).run(signature ?? null, Date.now(), result, ratingKey);
 }
 
+/** Update only the stored fingerprint (no "last synced" change) — used to adopt
+ *  a new signature format without triggering a sync. */
+export function setMediuxWatchSignature(ratingKey: string, signature: string): void {
+  db.prepare("UPDATE mediux_watches SET last_signature = ? WHERE rating_key = ?").run(
+    signature,
+    ratingKey,
+  );
+}
+
 export function deleteMediuxWatch(ratingKey: string): void {
   db.prepare("DELETE FROM mediux_watches WHERE rating_key = ?").run(ratingKey);
 }
